@@ -654,6 +654,23 @@ test('claude settings: unrelated keys and env vars survive the merge', async () 
   });
 });
 
+test('claude settings: a helper path containing spaces is quoted', async () => {
+  const { mergeClaudeSettings, revertClaudeSettings } = await import('../src/claudeCode');
+  const helper = process.platform === 'win32'
+    ? 'C:\\Users\\me\\App Data\\databricks-aigw-token.cmd'
+    : '/Users/me/Library/Application Support/Code/User/globalStorage/x/databricks-aigw-token.sh';
+  const expected = process.platform === 'win32' ? `"${helper}"` : `'${helper}'`;
+  await withTempSettings(undefined, async (settingsPath) => {
+    await mergeClaudeSettings(settingsPath, 'https://ws/ai-gateway/anthropic', helper);
+    const settings = await readSettings(settingsPath);
+    assert.equal(settings['apiKeyHelper'], expected);
+
+    // Revert must still recognise the quoted path as its own helper.
+    await revertClaudeSettings(settingsPath);
+    assert.equal((await readSettings(settingsPath))['apiKeyHelper'], undefined);
+  });
+});
+
 test('claude settings: the backup holds the pre-merge contents', async () => {
   const { mergeClaudeSettings } = await import('../src/claudeCode');
   const initial = JSON.stringify({ model: 'original' });

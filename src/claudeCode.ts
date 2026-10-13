@@ -145,7 +145,9 @@ export async function mergeClaudeSettings(
   }
   Object.assign(env, modelPins);
   settings['env'] = env;
-  settings['apiKeyHelper'] = helperPath;
+  // Claude Code runs this value as a shell command, so a path containing spaces
+  // (common under e.g. "Application Support" on macOS) must be quoted.
+  settings['apiKeyHelper'] = quoteForShell(helperPath);
 
   await writeJsonFile(settingsPath, settings);
   return { settingsPath, backupPath };
@@ -180,6 +182,17 @@ export async function revertClaudeSettings(settingsPath: string): Promise<void> 
 
 function helperBasename(): string {
   return process.platform === 'win32' ? 'databricks-aigw-token.cmd' : 'databricks-aigw-token.sh';
+}
+
+/** Quotes a path for use as a shell command, but only when it needs it, to keep plain paths readable. */
+function quoteForShell(filePath: string): string {
+  if (!/\s/.test(filePath)) {
+    return filePath;
+  }
+  if (process.platform === 'win32') {
+    return `"${filePath.replace(/"/g, '""')}"`;
+  }
+  return `'${filePath.replace(/'/g, `'\\''`)}'`;
 }
 
 export function claudeSettingsPath(): string {
