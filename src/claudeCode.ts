@@ -2,8 +2,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { anthropicBaseUrl } from './config';
-import { TokenService } from './tokenService';
 import { log } from './log';
+import { CLAUDE_CODE_PIN_ENV_KEYS, GatewayModel, claudeCodeModelPins } from './models';
+import { TokenService } from './tokenService';
 
 /**
  * Claude Code reads its gateway credential by running `apiKeyHelper` and using
@@ -14,7 +15,12 @@ import { log } from './log';
 const HELPER_TTL_MS = 900_000;
 
 /** Only these keys are written. Everything else in the settings file is left alone. */
-const MANAGED_ENV_KEYS = ['ANTHROPIC_BASE_URL', 'CLAUDE_CODE_API_KEY_HELPER_TTL_MS'] as const;
+const MANAGED_ENV_KEYS = [
+  'ANTHROPIC_BASE_URL',
+  'CLAUDE_CODE_API_KEY_HELPER_TTL_MS',
+  'CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS',
+  ...CLAUDE_CODE_PIN_ENV_KEYS,
+] as const;
 
 export interface ClaudeCodeWiring {
   settingsPath: string;
@@ -34,14 +40,15 @@ export class ClaudeCodeConfigurator {
    * managed keys into the user Claude settings, and exports the base URL into new
    * integrated terminals.
    */
-  async apply(workspaceOrigin: string): Promise<ClaudeCodeWiring> {
+  async apply(workspaceOrigin: string, models: GatewayModel[]): Promise<ClaudeCodeWiring> {
     const endpoint = this.tokenService.endpoint;
     if (!endpoint) {
       throw new Error('The local token service is not running, so Claude Code cannot be configured.');
     }
     const baseUrl = anthropicBaseUrl(workspaceOrigin);
     const helperPath = await this.writeHelperScript(endpoint);
-    const { settingsPath, backupPath } = await this.mergeSettings(baseUrl, helperPath);
+    const modelPins = claudeCodeModelPins(models);
+    const { settingsPath, backupPath } = await this.mergeSettings(baseUrl, helperPath, modelPins);
 
     // Terminals launched from VS Code inherit the base URL, so `claude` in the
     // integrated terminal reaches the gateway without a wrapper script.
@@ -96,8 +103,9 @@ export class ClaudeCodeConfigurator {
   private async mergeSettings(
     baseUrl: string,
     helperPath: string,
+    modelPins: Record<string, string>,
   ): Promise<{ settingsPath: string; backupPath?: string }> {
-    return await mergeClaudeSettings(claudeSettingsPath(), baseUrl, helperPath);
+    return await mergeClaudeSettings(claudeSettingsPath(), baseUrl, helperPath, modelPins);
   }
 }
 
@@ -113,6 +121,7 @@ export async function mergeClaudeSettings(
   settingsPath: string,
   baseUrl: string,
   helperPath: string,
+  modelPins: Record<string, string> = {},
 ): Promise<{ settingsPath: string; backupPath?: string }> {
   const existing = await readJsonFile(settingsPath);
   let backupPath: string | undefined;
@@ -128,6 +137,13 @@ export async function mergeClaudeSettings(
   const env: Record<string, unknown> = isRecord(settings['env']) ? { ...settings['env'] } : {};
   env['ANTHROPIC_BASE_URL'] = baseUrl;
   env['CLAUDE_CODE_API_KEY_HELPER_TTL_MS'] = String(HELPER_TTL_MS);
+  // The gateway rejects unknown anthropic-beta values (e.g. advisor-tool-*, prompt-caching-scope-*) with a 400.
+  env['CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS'] = '1';
+  // Pins Claude Code's model aliases to what this gateway actually serves; see claudeCodeModelPins.
+  for (const key of CLAUDE_CODE_PIN_ENV_KEYS) {
+    delete env[key];
+  }
+  Object.assign(env, modelPins);
   settings['env'] = env;
   settings['apiKeyHelper'] = helperPath;
 

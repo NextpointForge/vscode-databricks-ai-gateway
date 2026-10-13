@@ -4,14 +4,14 @@ import { GatewayAuthenticationProvider } from './authProvider';
 import { ClaudeCodeConfigurator, claudeSettingsPath } from './claudeCode';
 import { ConfigurationError, VENDOR_ID, readConfig, requireWorkspaceOrigin } from './config';
 import { initLog, log } from './log';
-import { discoverModels } from './models';
+import { GatewayModel, discoverModels } from './models';
 import { describe } from './oauth';
 import { GatewayChatProvider, SessionState } from './provider';
 import {
-  StatusMenuAction,
-  StatusSnapshot,
-  buildStatusMenu,
-  describeSnapshot,
+    StatusMenuAction,
+    StatusSnapshot,
+    buildStatusMenu,
+    describeSnapshot,
 } from './statusMenu';
 import { TokenService } from './tokenService';
 import { Workspace, chooseWorkspace } from './workspaces';
@@ -180,7 +180,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     try {
       const origin = requireWorkspaceOrigin(stored.origin);
-      await claudeCode.apply(origin);
+      const models = await discoverModels(auth, origin);
+      await claudeCode.apply(origin, models);
       log.info('Refreshed the Claude Code helper for this session.');
     } catch (error) {
       log.warn(`Could not refresh the Claude Code helper: ${describe(error)}`);
@@ -239,7 +240,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         if (readConfig().configureClaudeCodeOnSignIn) {
           progress.report({ message: 'Configuring Claude Code…' });
-          await configureClaudeCode(workspace.origin, { quiet: true });
+          await configureClaudeCode(workspace.origin, models, { quiet: true });
         }
       },
     );
@@ -256,9 +257,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const configureClaudeCode = async (
     workspaceOrigin: string,
+    models: GatewayModel[],
     options: { quiet: boolean },
   ): Promise<void> => {
-    const wiring = await claudeCode.apply(workspaceOrigin);
+    const wiring = await claudeCode.apply(workspaceOrigin, models);
     await context.globalState.update(CLAUDE_CODE_STATE_KEY, true);
     log.info(`Claude Code settings written to ${wiring.settingsPath}.`);
     if (options.quiet) {
@@ -308,7 +310,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     provider.refresh();
 
     if (readConfig().configureClaudeCodeOnSignIn) {
-      await configureClaudeCode(workspace.origin, { quiet: true });
+      await configureClaudeCode(workspace.origin, models, { quiet: true });
     }
     void vscode.window.showInformationMessage(
       `Using ${workspace.name}: ${models.length} Claude model(s).`,
@@ -323,7 +325,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       throw new Error('Sign in and select a workspace first.');
     }
     await tokenService.start(config.tokenServicePort);
-    await configureClaudeCode(active.workspaceOrigin, { quiet: false });
+    await configureClaudeCode(active.workspaceOrigin, active.models, { quiet: false });
   };
 
   const authProvider = new GatewayAuthenticationProvider(

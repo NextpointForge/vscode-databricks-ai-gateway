@@ -151,10 +151,21 @@ sign-in is a single browser round trip rather than one per workspace.
 
 | Path | Contents |
 | --- | --- |
-| `~/.claude/settings.json` | Adds `apiKeyHelper` and two `env` keys (`ANTHROPIC_BASE_URL`, `CLAUDE_CODE_API_KEY_HELPER_TTL_MS`). Everything else is preserved, and the file is backed up to `settings.json.databricks-aigw.bak` first. A file that is present but unparseable aborts the write instead of being replaced. |
+| `~/.claude/settings.json` | Adds `apiKeyHelper` and `env` keys: `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_API_KEY_HELPER_TTL_MS`, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`, and an `ANTHROPIC_DEFAULT_*_MODEL` pin for each model family the gateway reports. Everything else is preserved, and the file is backed up to `settings.json.databricks-aigw.bak` first. A file that is present but unparseable aborts the write instead of being replaced. |
 | Extension global storage | The `apiKeyHelper` script, created user-only (`0700`). |
 
 `Sign Out` removes those keys again and leaves the rest of the file untouched.
+
+Claude Code's own `opus`/`sonnet`/`haiku`/`fable` aliases move to newer model
+names on Claude Code's release schedule, independent of what a given gateway has
+rolled out. Without a pin, Claude Code sends whatever name the alias currently
+resolves to, which a gateway that hasn't caught up rejects with a 403 such as
+`'claude-sonnet-5-5' is no longer available`. Pinning each `ANTHROPIC_DEFAULT_*_MODEL`
+to the strongest version the gateway's `/v1/models` actually reports keeps Claude
+Code on an id the gateway accepts. The pins are refreshed every time the
+extension writes the Claude Code settings, so a newly rolled-out model is picked
+up automatically; `Databricks AI Gateway: Configure Claude Code` re-applies them
+on demand.
 
 ## Relationship to the setup scripts
 

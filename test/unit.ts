@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { accountLabel } from '../src/authProvider';
 import { ConfigurationError, accountAuthorizeUrl, anthropicBaseUrl, readConfig, requireWorkspaceOrigin, validateConfig } from '../src/config';
 import {
+  claudeCodeModelPins,
   discoverModels,
   gatewayModelId,
   isOneMVariant,
@@ -439,6 +440,39 @@ test('models: the [1m] suffix is stripped before an id reaches the gateway', () 
   assert.equal(isOneMVariant('system.ai.claude-opus-5'), false);
 });
 
+// ---------------------------------------------------------------------------
+// Claude Code model pins. Claude Code's `sonnet`/`opus` aliases move to newer
+// model names on its own schedule, independent of what a gateway serves, which
+// is how a user sees "'claude-sonnet-5-5' is no longer available". Pinning
+// ANTHROPIC_DEFAULT_*_MODEL to the gateway's own ids avoids that.
+// ---------------------------------------------------------------------------
+
+test('models: pins each family to the strongest version the gateway reports', () => {
+  const pins = claudeCodeModelPins([
+    { id: 'system.ai.claude-opus-4-8', displayName: 'Claude Opus 4.8' },
+    { id: 'system.ai.claude-opus-5', displayName: 'Claude Opus 5' },
+    { id: 'system.ai.claude-sonnet-5', displayName: 'Claude Sonnet 5' },
+    { id: 'system.ai.claude-haiku-4-5', displayName: 'Claude Haiku 4.5' },
+  ]);
+  assert.deepEqual(pins, {
+    ANTHROPIC_DEFAULT_OPUS_MODEL: 'system.ai.claude-opus-5',
+    ANTHROPIC_DEFAULT_SONNET_MODEL: 'system.ai.claude-sonnet-5',
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: 'system.ai.claude-haiku-4-5',
+  });
+});
+
+test('models: pins ignore the synthesized [1m] entries and never carry the suffix', () => {
+  const pins = claudeCodeModelPins(
+    withOneMVariants([{ id: 'system.ai.claude-opus-5', displayName: 'Claude Opus 5' }]),
+  );
+  assert.deepEqual(pins, { ANTHROPIC_DEFAULT_OPUS_MODEL: 'system.ai.claude-opus-5' });
+});
+
+test('models: a family absent from the gateway gets no pin', () => {
+  const pins = claudeCodeModelPins([{ id: 'system.ai.claude-sonnet-5', displayName: 'Claude Sonnet 5' }]);
+  assert.deepEqual(pins, { ANTHROPIC_DEFAULT_SONNET_MODEL: 'system.ai.claude-sonnet-5' });
+});
+
 test('models: offerOneMContext false keeps the 1M entries out of the picker', async () => {
   setConfig({ offerOneMContext: false });
   const stub = gatewayStub({});
@@ -614,6 +648,7 @@ test('claude settings: unrelated keys and env vars survive the merge', async () 
     assert.equal(env['MY_OWN_VAR'], 'keep-me');
     assert.equal(env['ANTHROPIC_BASE_URL'], 'https://ws/ai-gateway/anthropic');
     assert.equal(env['CLAUDE_CODE_API_KEY_HELPER_TTL_MS'], '900000');
+    assert.equal(env['CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS'], '1');
     assert.equal(settings['apiKeyHelper'], '/h/helper.sh');
     assert.ok(result.backupPath, 'an existing file must be backed up');
   });
@@ -668,6 +703,42 @@ test('claude settings: revert removes only the managed keys', async () => {
     assert.equal(settings['model'], 'keep');
     assert.equal(settings['apiKeyHelper'], undefined);
     assert.deepEqual(settings['env'], { MY_OWN_VAR: 'keep-me' });
+  });
+});
+
+test('claude settings: model pins are written and later removed on revert', async () => {
+  const { mergeClaudeSettings, revertClaudeSettings } = await import('../src/claudeCode');
+  const initial = JSON.stringify({ env: { MY_OWN_VAR: 'keep-me' } });
+  await withTempSettings(initial, async (settingsPath) => {
+    await mergeClaudeSettings(settingsPath, 'https://ws/ai-gateway/anthropic', '/h/helper.sh', {
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'system.ai.claude-opus-5',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'system.ai.claude-sonnet-5',
+    });
+    let env = (await readSettings(settingsPath))['env'] as Record<string, string>;
+    assert.equal(env['ANTHROPIC_DEFAULT_OPUS_MODEL'], 'system.ai.claude-opus-5');
+    assert.equal(env['ANTHROPIC_DEFAULT_SONNET_MODEL'], 'system.ai.claude-sonnet-5');
+    assert.equal(env['MY_OWN_VAR'], 'keep-me');
+
+    await revertClaudeSettings(settingsPath);
+    env = (await readSettings(settingsPath))['env'] as Record<string, string>;
+    assert.equal(env['ANTHROPIC_DEFAULT_OPUS_MODEL'], undefined);
+    assert.equal(env['ANTHROPIC_DEFAULT_SONNET_MODEL'], undefined);
+    assert.equal(env['MY_OWN_VAR'], 'keep-me');
+  });
+});
+
+test('claude settings: a stale pin for a family no longer served is dropped on reapply', async () => {
+  const { mergeClaudeSettings } = await import('../src/claudeCode');
+  const initial = JSON.stringify({
+    env: { ANTHROPIC_DEFAULT_SONNET_MODEL: 'system.ai.claude-sonnet-5-old' },
+  });
+  await withTempSettings(initial, async (settingsPath) => {
+    await mergeClaudeSettings(settingsPath, 'https://ws/ai-gateway/anthropic', '/h/helper.sh', {
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'system.ai.claude-opus-5',
+    });
+    const env = (await readSettings(settingsPath))['env'] as Record<string, string>;
+    assert.equal(env['ANTHROPIC_DEFAULT_OPUS_MODEL'], 'system.ai.claude-opus-5');
+    assert.equal(env['ANTHROPIC_DEFAULT_SONNET_MODEL'], undefined);
   });
 });
 

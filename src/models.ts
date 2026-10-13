@@ -202,6 +202,41 @@ export function sortModels(models: GatewayModel[]): GatewayModel[] {
   return [...models].sort(compareModels);
 }
 
+/** Env var that pins each family's Claude Code alias (`opus`, `sonnet`, ...). */
+const CLAUDE_CODE_PIN_ENV_BY_FAMILY: Record<string, string> = {
+  opus: 'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  sonnet: 'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  haiku: 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+  fable: 'ANTHROPIC_DEFAULT_FABLE_MODEL',
+};
+
+/** The `ANTHROPIC_DEFAULT_*_MODEL` variables {@link claudeCodeModelPins} can set. */
+export const CLAUDE_CODE_PIN_ENV_KEYS = Object.values(CLAUDE_CODE_PIN_ENV_BY_FAMILY);
+
+/**
+ * Pins Claude Code's `opus`/`sonnet`/`haiku`/`fable` aliases to the strongest
+ * model this gateway actually serves in each family.
+ *
+ * Claude Code's own release schedule moves those aliases to newer model names
+ * independent of what a given gateway has rolled out. Left unpinned, Claude Code
+ * sends whatever name the alias currently resolves to, which the gateway can
+ * reject with "... is no longer available. Use Unity Catalog model services."
+ * Pinning sends the gateway's own id instead, matching what the VS Code chat
+ * picker already requests for the same model.
+ */
+export function claudeCodeModelPins(models: GatewayModel[]): Record<string, string> {
+  const pins: Record<string, string> = {};
+  const base = sortModels(models.filter((model) => !isOneMVariant(model.id)));
+  for (const model of base) {
+    const family = FAMILY_ORDER.find((name) => model.id.toLowerCase().includes(name));
+    const envVar = family ? CLAUDE_CODE_PIN_ENV_BY_FAMILY[family] : undefined;
+    if (envVar && !(envVar in pins)) {
+      pins[envVar] = gatewayModelId(model.id);
+    }
+  }
+  return pins;
+}
+
 /** Strongest family first, then newest version first within a family. */
 function compareModels(left: GatewayModel, right: GatewayModel): number {
   const leftFamily = familyRank(left.id);

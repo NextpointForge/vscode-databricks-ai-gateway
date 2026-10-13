@@ -4,8 +4,11 @@
     {
       "label": "Generate Local Databricks AI Gateway VSIX",
       "type": "shell",
-      "command": "npm.cmd",
+      "command": "npm",
       "args": ["run", "package"],
+      "windows": {
+        "command": "npm.cmd"
+      },
       "group": "build",
       "problemMatcher": []
     },
