@@ -1,6 +1,6 @@
 name: Debug Identity
 
-# One-shot helper: prints the Azure DevOps profile id to add as a Marketplace publisher member.
+# One-shot helper: prints the Azure DevOps identity id to add as a Marketplace publisher member.
 # Delete this workflow once the identity is authorized on the publisher.
 on:
   workflow_dispatch:
@@ -20,4 +20,10 @@ jobs:
           allow-no-subscriptions: true
 
       # 499b84ac-... is the well-known Azure DevOps app id in Entra.
-      - run: az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798
+      # connectionData returns authenticatedUser.id without needing a pre-existing profile.
+      - name: connectionData
+        run: az rest -u 'https://app.vssps.visualstudio.com/_apis/connectionData?api-version=7.1-preview.1' --resource 499b84ac-1321-427f-aa17-267ca6975798
+
+      - name: profile (may 404 for a service identity)
+        continue-on-error: true
+        run: az rest -u 'https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1-preview.3' --resource 499b84ac-1321-427f-aa17-267ca6975798
