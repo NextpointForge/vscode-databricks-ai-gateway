@@ -15,7 +15,7 @@
     {
       "label": "Install AI Gateway Models Extension",
       "type": "shell",
-      "command": "tmp=$(mktemp --suffix=.vsix) && curl -fsSL 'https://github.com/alexzubiaga/vscode-databricks-ai-gateway/releases/latest/download/aigw-models.vsix' -o \"$tmp\" && code --install-extension \"$tmp\"; result=$?; rm -f \"$tmp\"; exit $result",
+      "command": "tmp=$(mktemp --suffix=.vsix) && curl -fsSL 'https://github.com/NextpointForge/vscode-databricks-ai-gateway/releases/latest/download/aigw-models.vsix' -o \"$tmp\" && code --install-extension \"$tmp\"; result=$?; rm -f \"$tmp\"; exit $result",
       "problemMatcher": []
     }
   ]

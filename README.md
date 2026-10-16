@@ -32,11 +32,11 @@ dropped.
 
 Requires VS Code 1.104 or newer (the language model provider API).
 
-Install it from the Visual Studio Marketplace (search for **AxiomForge AI
+Install it from the Visual Studio Marketplace (search for **NextpointForge AI
 Gateway Models**), or from the command line:
 
 ```bash
-code --install-extension AxiomForge.aigw-models
+code --install-extension NextpointForge.aigw-models
 ```
 
 To build and install from source instead:

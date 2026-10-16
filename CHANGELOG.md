@@ -2,7 +2,8 @@
 
 ## 0.2.0
 
-First Visual Studio Marketplace release, published as `AxiomForge.aigw-models`.
+First Visual Studio Marketplace release, published as
+`NextpointForge.aigw-models`.
 The extension was renamed to drop the Databricks branding; it remains an
 unofficial project with no affiliation to Databricks.
 

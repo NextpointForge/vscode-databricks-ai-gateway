@@ -6,9 +6,11 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Must match the GitHub environment named in the managed identity's federated credential.
+    environment: marketplace-publish
     permissions:
       contents: write
-      # Required for vsce's OIDC trusted publishing; no VSCE_PAT secret is used.
+      # Required to request the Entra ID token; no VSCE_PAT secret is used.
       id-token: write
     steps:
       - uses: actions/checkout@v5
@@ -28,8 +30,14 @@ jobs:
         id: version
         run: echo "version=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
       - name: Publish to the Visual Studio Marketplace
-        run: npx @vscode/vsce publish --oidc --no-dependencies --packagePath aigw-models.vsix
+        run: npx --no-install vsce publish --azure-credential --no-dependencies --packagePath aigw-models.vsix
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

@@ -500,7 +500,7 @@ def _build_glyph(contours):
 
 def _name_table():
     """Windows-platform name records (UTF-16BE), sorted by name id."""
-    family = "AxiomForge AI Gateway Icons"
+    family = "NextpointForge AI Gateway Icons"
     strings = {
         1: family,
         2: "Regular",
