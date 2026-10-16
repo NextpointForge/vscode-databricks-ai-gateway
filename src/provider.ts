@@ -1,10 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type {
-  ContentBlockParam,
-  MessageParam,
-  MessageStreamEvent,
-  Tool,
-  ToolChoice,
+    ContentBlockParam,
+    MessageParam,
+    MessageStreamEvent,
+    Tool,
+    ToolChoice,
 } from '@anthropic-ai/sdk/resources/messages';
 import * as vscode from 'vscode';
 import { AuthManager, NotSignedInError } from './auth';
@@ -112,7 +112,7 @@ export class GatewayChatProvider implements vscode.LanguageModelChatProvider {
       // The `[1m]` entries carry their own limits; base models follow the settings.
       maxInputTokens: model.maxInputTokens ?? config.maxInputTokens,
       maxOutputTokens: model.maxOutputTokens ?? config.maxOutputTokens,
-      tooltip: `${model.displayName} via Databricks AI Gateway (${session.workspaceName})`,
+      tooltip: `${model.displayName} via the AI Gateway (${session.workspaceName})`,
       detail: session.workspaceName,
       capabilities: {
         toolCalling: true,
@@ -186,7 +186,7 @@ export class GatewayChatProvider implements vscode.LanguageModelChatProvider {
     // thrown up in the middle of someone's chat turn is worse than a clear error.
     const session = this.getSession() ?? (await this.ensureSession(true));
     if (!session) {
-      throw new Error('No Databricks AI Gateway workspace is selected. Run "Databricks AI Gateway: Sign In".');
+      throw new Error('No AI Gateway workspace is selected. Run "AI Gateway: Sign In".');
     }
     const config = readConfig();
     const { messages: anthropicMessages } = toAnthropicMessages(messages);
@@ -608,25 +608,25 @@ function isUnauthorized(error: unknown): boolean {
 function translateError(error: unknown): Error {
   if (error instanceof NotSignedInError) {
     return new Error(
-      'Your Databricks sign-in expired. Run "Databricks AI Gateway: Sign In" to sign in again.',
+      'Your Databricks sign-in expired. Run "AI Gateway: Sign In" to sign in again.',
     );
   }
   if (error instanceof Anthropic.APIError) {
     const status = error.status;
     if (status === 401 || status === 403) {
       return new Error(
-        'The Databricks AI Gateway rejected the credential. Run "Databricks AI Gateway: Sign In" to sign in again.',
+        'The AI Gateway rejected the credential. Run "AI Gateway: Sign In" to sign in again.',
       );
     }
     if (status === 404) {
       return new Error(
-        'The gateway does not recognise this model. Re-run "Databricks AI Gateway: Select Workspace" to refresh the model list.',
+        'The gateway does not recognise this model. Re-run "AI Gateway: Select Workspace" to refresh the model list.',
       );
     }
     if (status === 429) {
-      return new Error('The Databricks AI Gateway is rate limiting this workspace. Try again shortly.');
+      return new Error('The AI Gateway is rate limiting this workspace. Try again shortly.');
     }
-    return new Error(`The Databricks AI Gateway returned an error (HTTP ${status ?? 'unknown'}): ${error.message}`);
+    return new Error(`The AI Gateway returned an error (HTTP ${status ?? 'unknown'}): ${error.message}`);
   }
   if (error instanceof Error) {
     return error;

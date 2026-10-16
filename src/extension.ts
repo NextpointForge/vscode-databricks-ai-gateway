@@ -16,14 +16,8 @@ import {
 import { TokenService } from './tokenService';
 import { Workspace, chooseWorkspace } from './workspaces';
 
-const WORKSPACE_STATE_KEY = 'databricksAigw.workspace';
-const CLAUDE_CODE_STATE_KEY = 'databricksAigw.claudeCodeConfigured';
-
-/**
- * Verdicts from the old `[1m]`-suffix probe, which the gateway 404s for every id.
- * They recorded the 1M entries as unsupported and kept them out of the picker.
- */
-const STALE_ONE_M_STATE_KEYS = ['databricksAigw.oneMSupport', 'databricksAigw.oneMSupport.v2'];
+const WORKSPACE_STATE_KEY = 'aiGateway.workspace';
+const CLAUDE_CODE_STATE_KEY = 'aiGateway.claudeCodeConfigured';
 
 interface StoredWorkspace {
   name: string;
@@ -32,24 +26,17 @@ interface StoredWorkspace {
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push(initLog());
-  log.info('Databricks AI Gateway extension activating.');
+  log.info('AI Gateway Models extension activating.');
 
   const auth = new AuthManager(context.secrets);
   context.subscriptions.push(auth);
-
-  for (const stale of STALE_ONE_M_STATE_KEYS) {
-    if (context.globalState.get(stale) !== undefined) {
-      log.info(`Discarding 1M-context probe verdicts cached under ${stale}.`);
-      void context.globalState.update(stale, undefined);
-    }
-  }
 
   const tokenService = new TokenService(auth);
   context.subscriptions.push({ dispose: () => tokenService.dispose() });
 
   const claudeCode = new ClaudeCodeConfigurator(context, tokenService);
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  status.command = 'databricksAigw.showStatus';
+  status.command = 'aiGateway.showStatus';
   context.subscriptions.push(status);
 
   let session: SessionState | undefined;
@@ -58,13 +45,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const updateStatus = () => {
     if (session) {
-      status.text = `$(databricks-aigw-cat) ${session.models.length} Claude model(s)`;
+      status.text = `$(ai-gateway-cat) ${session.models.length} Claude model(s)`;
       status.tooltip =
-        `Databricks AI Gateway: ${session.workspaceName}\n${session.workspaceOrigin}\n` +
+        `AI Gateway: ${session.workspaceName}\n${session.workspaceOrigin}\n` +
         'Click for status and actions.';
       status.backgroundColor = undefined;
     } else {
-      status.text = '$(databricks-aigw-cat) Databricks AI Gateway: sign in';
+      status.text = '$(ai-gateway-cat) AI Gateway: sign in';
       status.tooltip =
         'Sign in to expose the approved Claude models to VS Code chat.\nClick for status and actions.';
     }
@@ -189,7 +176,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
 
   const ensureAccountId = async (): Promise<void> => {
-    const section = vscode.workspace.getConfiguration('databricksAigw');
+    const section = vscode.workspace.getConfiguration('aiGateway');
     const current = (section.get<string>('accountId') ?? '').trim();
     if (/^[0-9a-f-]{36}$/i.test(current)) {
       return;
@@ -215,7 +202,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: 'Databricks AI Gateway',
+        title: 'AI Gateway',
         cancellable: true,
       },
       async (progress, token) => {
@@ -246,11 +233,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
 
     void vscode.window.showInformationMessage(
-      `Databricks AI Gateway ready: ${session?.models.length ?? 0} Claude model(s) from ${session?.workspaceName}.`,
+      `AI Gateway ready: ${session?.models.length ?? 0} Claude model(s) from ${session?.workspaceName}.`,
       'Show status',
     ).then((choice) => {
       if (choice === 'Show status') {
-        void vscode.commands.executeCommand('databricksAigw.showStatus');
+        void vscode.commands.executeCommand('aiGateway.showStatus');
       }
     });
   };
@@ -283,7 +270,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     updateStatus();
     provider.reset();
     void vscode.window.showInformationMessage(
-      'Signed out of Databricks AI Gateway. The Claude Code settings keys were removed.',
+      'Signed out of the AI Gateway. The Claude Code settings keys were removed.',
     );
   };
 
@@ -355,7 +342,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       tokenServiceEndpoint: tokenService.endpoint,
     };
     const picked = await vscode.window.showQuickPick(buildStatusMenu(snapshot), {
-      title: 'Databricks AI Gateway',
+      title: 'AI Gateway',
       placeHolder: describeSnapshot(snapshot),
       matchOnDescription: true,
       matchOnDetail: true,
@@ -417,7 +404,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const message = describe(error);
         log.error(`${name} failed: ${message}`);
         const choice = await vscode.window.showErrorMessage(
-          `Databricks AI Gateway: ${message}`,
+          `AI Gateway: ${message}`,
           'Show log',
         );
         if (choice === 'Show log') {
@@ -427,21 +414,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
 
   context.subscriptions.push(
-    run('databricksAigw.signIn', async () => {
+    run('aiGateway.signIn', async () => {
       // A fresh sign-in must not keep a stale workspace/model list.
       session = undefined;
       await signIn();
     }),
 
-    run('databricksAigw.signOut', signOut),
+    run('aiGateway.signOut', signOut),
 
-    run('databricksAigw.selectWorkspace', selectWorkspace),
+    run('aiGateway.selectWorkspace', selectWorkspace),
 
-    run('databricksAigw.configureClaudeCode', configureClaudeCodeInteractive),
+    run('aiGateway.configureClaudeCode', configureClaudeCodeInteractive),
 
-    run('databricksAigw.showLog', async () => log.show()),
+    run('aiGateway.showLog', async () => log.show()),
 
-    run('databricksAigw.showStatus', showMenu),
+    run('aiGateway.showStatus', showMenu),
   );
 
   // The Accounts menu is where VS Code users expect to find who they are signed in
@@ -450,7 +437,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscode.authentication.registerAuthenticationProvider(
       VENDOR_ID,
-      'Databricks AI Gateway',
+      'AI Gateway',
       authProvider,
       { supportsMultipleAccounts: false },
     ),
@@ -477,16 +464,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Changing the account or filter invalidates the resolved workspace/models.
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (!event.affectsConfiguration('databricksAigw')) {
+      if (!event.affectsConfiguration('aiGateway')) {
         return;
       }
       // The 1M variants are synthesized during discovery and cached in the session,
       // so the toggle only takes effect if the list is discovered again.
       if (
-        event.affectsConfiguration('databricksAigw.accountId') ||
-        event.affectsConfiguration('databricksAigw.accountHost') ||
-        event.affectsConfiguration('databricksAigw.workspaceFilter') ||
-        event.affectsConfiguration('databricksAigw.offerOneMContext')
+        event.affectsConfiguration('aiGateway.accountId') ||
+        event.affectsConfiguration('aiGateway.accountHost') ||
+        event.affectsConfiguration('aiGateway.workspaceFilter') ||
+        event.affectsConfiguration('aiGateway.offerOneMContext')
       ) {
         session = undefined;
         updateStatus();
@@ -521,7 +508,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 }
 
 export function deactivate(): void {
-  log.info('Databricks AI Gateway extension deactivated.');
+  log.info('AI Gateway Models extension deactivated.');
 }
 
 export { ConfigurationError };

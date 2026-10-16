@@ -8,15 +8,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Required for vsce's OIDC trusted publishing; no VSCE_PAT secret is used.
+      id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
       - run: npm ci
+
+      - run: npm test
 
       - run: npm run package
 
@@ -24,10 +28,13 @@ jobs:
         id: version
         run: echo "version=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      - name: Publish to the Visual Studio Marketplace
+        run: npx @vscode/vsce publish --oidc --no-dependencies --packagePath aigw-models.vsix
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: ${{ steps.version.outputs.version }}
           generate_release_notes: true
-          files: databricks-aigw-models.vsix
+          files: aigw-models.vsix

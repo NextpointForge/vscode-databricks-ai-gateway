@@ -657,8 +657,8 @@ test('claude settings: unrelated keys and env vars survive the merge', async () 
 test('claude settings: a helper path containing spaces is quoted', async () => {
   const { mergeClaudeSettings, revertClaudeSettings } = await import('../src/claudeCode');
   const helper = process.platform === 'win32'
-    ? 'C:\\Users\\me\\App Data\\databricks-aigw-token.cmd'
-    : '/Users/me/Library/Application Support/Code/User/globalStorage/x/databricks-aigw-token.sh';
+    ? 'C:\\Users\\me\\App Data\\ai-gateway-token.cmd'
+    : '/Users/me/Library/Application Support/Code/User/globalStorage/x/ai-gateway-token.sh';
   const expected = process.platform === 'win32' ? `"${helper}"` : `'${helper}'`;
   await withTempSettings(undefined, async (settingsPath) => {
     await mergeClaudeSettings(settingsPath, 'https://ws/ai-gateway/anthropic', helper);
@@ -711,13 +711,27 @@ test('claude settings: revert removes only the managed keys', async () => {
   const initial = JSON.stringify({ model: 'keep', env: { MY_OWN_VAR: 'keep-me' } });
   await withTempSettings(initial, async (settingsPath) => {
     const helper = process.platform === 'win32'
-      ? '/h/databricks-aigw-token.cmd'
-      : '/h/databricks-aigw-token.sh';
+      ? '/h/ai-gateway-token.cmd'
+      : '/h/ai-gateway-token.sh';
     await mergeClaudeSettings(settingsPath, 'https://ws/ai-gateway/anthropic', helper);
     await revertClaudeSettings(settingsPath);
 
     const settings = await readSettings(settingsPath);
     assert.equal(settings['model'], 'keep');
+    assert.equal(settings['apiKeyHelper'], undefined);
+    assert.deepEqual(settings['env'], { MY_OWN_VAR: 'keep-me' });
+  });
+});
+
+test('claude settings: revert also removes a helper left by the pre-rename extension', async () => {
+  const { revertClaudeSettings } = await import('../src/claudeCode');
+  const legacy = process.platform === 'win32'
+    ? '/h/databricks-aigw-token.cmd'
+    : '/h/databricks-aigw-token.sh';
+  const initial = JSON.stringify({ apiKeyHelper: legacy, env: { MY_OWN_VAR: 'keep-me' } });
+  await withTempSettings(initial, async (settingsPath) => {
+    await revertClaudeSettings(settingsPath);
+    const settings = await readSettings(settingsPath);
     assert.equal(settings['apiKeyHelper'], undefined);
     assert.deepEqual(settings['env'], { MY_OWN_VAR: 'keep-me' });
   });

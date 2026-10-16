@@ -41,7 +41,7 @@ PALETTES = {
     # Muted steel blue, a little cooler and more distinct in a tab strip.
     "steel": dict(plate=(0x1C2228, 0x13181C), cat=(0x86A9C0, 0x5F86A1),
                   inner_ear=0xB2C8D6, feature=0x161B20, glint=0.8, blush=0.10),
-    # Dusty terracotta: keeps a hint of the Databricks red, heavily muted.
+    # Dusty terracotta: warm and heavily muted.
     "clay": dict(plate=(0x1E2328, 0x14181C), cat=(0xC9857A, 0xA9635A),
                  inner_ear=0xE2B6AC, feature=0x191E22, glint=0.8, blush=0.10),
 }
@@ -500,7 +500,7 @@ def _build_glyph(contours):
 
 def _name_table():
     """Windows-platform name records (UTF-16BE), sorted by name id."""
-    family = "Databricks AI Gateway Icons"
+    family = "AxiomForge AI Gateway Icons"
     strings = {
         1: family,
         2: "Regular",

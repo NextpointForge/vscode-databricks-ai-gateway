@@ -1,10 +1,16 @@
 {
-  "name": "databricks-aigw-models",
-  "displayName": "Databricks AI Gateway Models",
-  "description": "Experimental, unofficial: signs in to Databricks AI Gateway and exposes the approved Claude models to VS Code chat and Claude Code.",
-  "version": "0.1.3",
-  "license": "SEE LICENSE IN README.md",
-  "private": true,
+  "name": "aigw-models",
+  "displayName": "AxiomForge AI Gateway Models",
+  "description": "Experimental and unofficial, not affiliated with or supported by Databricks: signs in to a Databricks AI Gateway and exposes the approved Claude models to VS Code chat and Claude Code.",
+  "version": "0.2.0",
+  "publisher": "AxiomForge",
+  "license": "Apache-2.0",
+  "preview": true,
+  "pricing": "Free",
+  "homepage": "https://github.com/alexzubiaga/vscode-databricks-ai-gateway/blob/main/README.md",
+  "bugs": {
+    "url": "https://github.com/alexzubiaga/vscode-databricks-ai-gateway/issues"
+  },
   "engines": {
     "vscode": "^1.104.0"
   },
@@ -12,15 +18,29 @@
     "AI",
     "Chat"
   ],
+  "keywords": [
+    "ai",
+    "llm",
+    "claude",
+    "anthropic",
+    "ai-gateway",
+    "chat",
+    "language-model",
+    "oauth"
+  ],
   "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1E2429",
+    "theme": "dark"
+  },
   "main": "./dist/extension.js",
   "activationEvents": [
     "onStartupFinished"
   ],
   "contributes": {
     "icons": {
-      "databricks-aigw-cat": {
-        "description": "Databricks AI Gateway cat",
+      "ai-gateway-cat": {
+        "description": "AI Gateway cat",
         "default": {
           "fontPath": "media/icon.woff",
           "fontCharacter": "\\E001"
@@ -29,92 +49,92 @@
     },
     "languageModelChatProviders": [
       {
-        "vendor": "databricks-aigw",
-        "displayName": "Databricks AI Gateway"
+        "vendor": "ai-gateway",
+        "displayName": "AI Gateway"
       }
     ],
     "authentication": [
       {
-        "id": "databricks-aigw",
-        "label": "Databricks AI Gateway"
+        "id": "ai-gateway",
+        "label": "AI Gateway"
       }
     ],
     "commands": [
       {
-        "command": "databricksAigw.signIn",
-        "title": "Databricks AI Gateway: Sign In",
-        "category": "Databricks AI Gateway"
+        "command": "aiGateway.signIn",
+        "title": "Sign In",
+        "category": "AI Gateway"
       },
       {
-        "command": "databricksAigw.signOut",
-        "title": "Databricks AI Gateway: Sign Out",
-        "category": "Databricks AI Gateway"
+        "command": "aiGateway.signOut",
+        "title": "Sign Out",
+        "category": "AI Gateway"
       },
       {
-        "command": "databricksAigw.selectWorkspace",
-        "title": "Databricks AI Gateway: Select Workspace",
-        "category": "Databricks AI Gateway"
+        "command": "aiGateway.selectWorkspace",
+        "title": "Select Workspace",
+        "category": "AI Gateway"
       },
       {
-        "command": "databricksAigw.showStatus",
-        "title": "Databricks AI Gateway: Status and Actions",
-        "category": "Databricks AI Gateway"
+        "command": "aiGateway.showStatus",
+        "title": "Status and Actions",
+        "category": "AI Gateway"
       },
       {
-        "command": "databricksAigw.showLog",
-        "title": "Databricks AI Gateway: Show Log",
-        "category": "Databricks AI Gateway"
+        "command": "aiGateway.showLog",
+        "title": "Show Log",
+        "category": "AI Gateway"
       },
       {
-        "command": "databricksAigw.configureClaudeCode",
-        "title": "Databricks AI Gateway: Configure Claude Code",
-        "category": "Databricks AI Gateway"
+        "command": "aiGateway.configureClaudeCode",
+        "title": "Configure Claude Code",
+        "category": "AI Gateway"
       }
     ],
     "configuration": {
-      "title": "Databricks AI Gateway",
+      "title": "AI Gateway Models",
       "properties": {
-        "databricksAigw.accountHost": {
+        "aiGateway.accountHost": {
           "type": "string",
           "default": "https://accounts.cloud.databricks.com",
           "description": "Databricks account console host used for the OAuth sign-in."
         },
-        "databricksAigw.accountId": {
+        "aiGateway.accountId": {
           "type": "string",
           "default": "",
           "description": "Databricks account ID (UUID) that owns the AI Gateway workspaces. Required."
         },
-        "databricksAigw.workspaceFilter": {
+        "aiGateway.workspaceFilter": {
           "type": "string",
           "default": "costcenter",
           "description": "Only account workspaces whose name contains this text (case-insensitive) are offered. Set to an empty string to list every workspace."
         },
-        "databricksAigw.redirectPort": {
+        "aiGateway.redirectPort": {
           "type": "number",
           "default": 8020,
           "description": "Loopback port for the OAuth redirect. Must stay 8020 unless Databricks has allowlisted another port for the databricks-cli client."
         },
-        "databricksAigw.maxInputTokens": {
+        "aiGateway.maxInputTokens": {
           "type": "number",
           "default": 200000,
-          "description": "Context window advertised to VS Code chat for the base models. The gateway does not report per-model limits, so this is a local declaration. The separate \"(1M context)\" entries declare 1000000 themselves and ignore this setting."
+          "description": "Context window advertised to VS Code chat for the base models. The gateway does not report per-model limits, so this is a local declaration. The separate \"(1M context)\" entries declare 872000 themselves and ignore this setting."
         },
-        "databricksAigw.maxOutputTokens": {
+        "aiGateway.maxOutputTokens": {
           "type": "number",
           "default": 64000,
           "description": "Maximum output tokens advertised to VS Code chat."
         },
-        "databricksAigw.offerOneMContext": {
+        "aiGateway.offerOneMContext": {
           "type": "boolean",
           "default": true,
           "description": "Also offer a \"(1M context)\" entry for each model the gateway serves with the 1M context window. The gateway routes that window as a separate model id (a [1m] suffix) and does not advertise it, so these entries are added locally. Turn this off if the workspace is not entitled to the 1M window."
         },
-        "databricksAigw.configureClaudeCodeOnSignIn": {
+        "aiGateway.configureClaudeCodeOnSignIn": {
           "type": "boolean",
           "default": true,
           "description": "After a successful sign-in, point Claude Code at the gateway by writing an apiKeyHelper into the user Claude settings and exporting ANTHROPIC_BASE_URL into new integrated terminals."
         },
-        "databricksAigw.tokenServicePort": {
+        "aiGateway.tokenServicePort": {
           "type": "number",
           "default": 0,
           "description": "Loopback port for the short-lived token service that Claude Code's apiKeyHelper calls. 0 picks a free port on each activation."
@@ -123,9 +143,10 @@
     }
   },
   "scripts": {
+    "vscode:prepublish": "npm run build -- --minify",
     "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20",
     "watch": "npm run build -- --sourcemap --watch",
-    "package": "npm run build -- --minify && vsce package --no-dependencies -o databricks-aigw-models.vsix",
+    "package": "npm run build -- --minify && vsce package --no-dependencies -o aigw-models.vsix",
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck && npm run test:unit",
     "test:unit": "esbuild test/unit.ts --bundle --outfile=out/test/unit.mjs --format=esm --platform=node --target=node20 --alias:vscode=./test/vscode-stub.ts && node --test out/test/unit.mjs",
@@ -137,12 +158,12 @@
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.104.0",
-    "@vscode/vsce": "^3.2.0",
+    "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.6.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/alexzubiaga/vscode-databricks-ai-gateway"
+    "url": "git+https://github.com/alexzubiaga/vscode-databricks-ai-gateway.git"
   }
 }

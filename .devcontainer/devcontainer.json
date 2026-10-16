@@ -1,5 +1,5 @@
 {
-  "name": "Databricks AI Gateway Extension",
+  "name": "AI Gateway Models Extension",
   "dockerFile": "Dockerfile",
   "postCreateCommand": "npm install",
   "customizations": {

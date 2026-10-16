@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import { AuthManager, NotSignedInError } from './auth';
 import { OAUTH_SCOPES, readConfig } from './config';
-import { describe } from './oauth';
 import { log } from './log';
+import { describe } from './oauth';
 
 /** There is only ever one account credential, so the session id is a constant. */
-const SESSION_ID = 'databricks-aigw-account';
+const SESSION_ID = 'ai-gateway-account';
 
 const GRANTED_SCOPES = OAUTH_SCOPES.split(' ').filter(Boolean);
 
@@ -18,7 +18,7 @@ const GRANTED_SCOPES = OAUTH_SCOPES.split(' ').filter(Boolean);
  * sign-out from the Accounts menu also reverts the Claude Code wiring.
  *
  * Registering the provider also lets other extensions request this credential via
- * `vscode.authentication.getSession('databricks-aigw', …)`. VS Code gates that
+ * `vscode.authentication.getSession('ai-gateway', …)`. VS Code gates that
  * behind its own per-extension consent prompt.
  */
 export class GatewayAuthenticationProvider

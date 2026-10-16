@@ -8,16 +8,16 @@ import {
   readConfig,
   validateConfig,
 } from './config';
-import { OAuthError, TokenResponse, authorize, describe, refresh } from './oauth';
 import { log } from './log';
+import { OAuthError, TokenResponse, authorize, describe, refresh } from './oauth';
 
-const REFRESH_TOKEN_KEY = 'databricksAigw.refreshToken';
+const REFRESH_TOKEN_KEY = 'aiGateway.refreshToken';
 /** Renew this far before expiry so an in-flight request never carries a dead token. */
 const EXPIRY_SKEW_MS = 120_000;
 
 export class NotSignedInError extends Error {
   constructor() {
-    super('Not signed in to Databricks AI Gateway.');
+    super('Not signed in to the AI Gateway.');
   }
 }
 

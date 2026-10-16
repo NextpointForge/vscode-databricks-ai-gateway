@@ -1,13 +1,14 @@
-# Databricks AI Gateway Models for VS Code
+# AI Gateway Models for VS Code
 
 > [!WARNING]
-> **Experimental.** This extension is an unofficial side project. It is not
-> supported by Databricks, its behaviour and settings may change or break without
-> notice, and it is not covered by any support or security review process. Use it
-> at your own risk, and prefer your organisation's official setup tooling for
-> anything you depend on.
+> **Experimental and unofficial.** This extension is an unofficial side project.
+> It is not affiliated with, endorsed by or supported by Databricks. Its
+> behaviour and settings may change or break without notice, and it is not
+> covered by any support or security review process. Use it at your own risk,
+> and prefer your organisation's official setup tooling for anything you depend
+> on.
 
-Signs in to the Databricks AI Gateway and makes the approved Claude models usable
+Signs in to a Databricks AI Gateway and makes the approved Claude models usable
 inside VS Code — in the chat model picker, and in Claude Code.
 
 One browser sign-in. No Databricks CLI, no local relay process, no personal
@@ -18,9 +19,9 @@ access token.
 | | |
 | --- | --- |
 | **Sign-in** | Databricks account OAuth (authorization code + PKCE) straight from VS Code. The refresh token goes into VS Code's `SecretStorage`; access tokens are minted on demand and never written to disk. |
-| **Workspace** | Lists the workspaces your login can see, keeps the ones whose name matches `databricksAigw.workspaceFilter` (default `costcenter`), and asks which to use when there is more than one. |
+| **Workspace** | Lists the workspaces your login can see, keeps the ones whose name matches `aiGateway.workspaceFilter` (default `costcenter`), and asks which to use when there is more than one. |
 | **Models** | Discovered live from the workspace gateway. Nothing is hard-coded, so a newly enabled model shows up without an extension update. Models that support the 1M context window also get a second **(1M context)** entry. |
-| **VS Code chat** | Registers a `databricks-aigw` model provider, so the Claude models appear in the chat model picker and are available to any extension through `vscode.lm`. |
+| **VS Code chat** | Registers an `ai-gateway` model provider, so the Claude models appear in the chat model picker and are available to any extension through `vscode.lm`. |
 | **Claude Code** | Points `ANTHROPIC_BASE_URL` at the gateway and installs an `apiKeyHelper` that keeps the hourly token fresh. |
 | **UI** | A status bar item opens a quick pick with the sign-in state, the workspace, the live model list and every action. The credential also shows up in VS Code's **Accounts** menu. |
 
@@ -31,13 +32,24 @@ dropped.
 
 Requires VS Code 1.104 or newer (the language model provider API).
 
+Install it from the Visual Studio Marketplace (search for **AxiomForge AI
+Gateway Models**), or from the command line:
+
+```bash
+code --install-extension AxiomForge.aigw-models
+```
+
+To build and install from source instead:
+
 ```bash
 npm install
 npm run package
-code --install-extension databricks-aigw-models.vsix
+code --install-extension aigw-models.vsix
 ```
 
-Then run **Databricks AI Gateway: Sign In** from the command palette.
+Set `aiGateway.accountId` to your Databricks account UUID — the extension will
+prompt for it on first sign-in if it is unset — then run **AI Gateway: Sign In**
+from the command palette.
 
 ## Using it
 
@@ -45,7 +57,7 @@ Everything is reachable from the **cat status bar item** on the right,
 which opens a single quick pick:
 
 ```
-Databricks AI Gateway                    costcenter-prod — 4 Claude model(s)
+AI Gateway                               costcenter-prod — 4 Claude model(s)
 ─── Status ───
   ✔ Signed in                                          dev@example.com
   ⌸ costcenter-prod                  https://dbc-1234.cloud.databricks.com
@@ -69,7 +81,7 @@ The Databricks credential is also registered as a VS Code **authentication
 provider**, so the account appears under the Accounts gear in the activity bar
 with its own **Sign Out** entry — which runs the full sign-out, including
 reverting the Claude Code settings. Other extensions can request the same
-credential through `vscode.authentication.getSession('databricks-aigw', …)`;
+credential through `vscode.authentication.getSession('ai-gateway', …)`;
 VS Code prompts for consent per extension before handing it over. Note that the
 Accounts menu only lists credentials that already exist, so the *first* sign-in
 still comes from the status bar or the command palette.
@@ -78,26 +90,26 @@ still comes from the status bar or the command palette.
 
 | Command | What it does |
 | --- | --- |
-| `Databricks AI Gateway: Sign In` | Runs the browser sign-in, picks a workspace, discovers models, and wires up Claude Code. |
-| `Databricks AI Gateway: Select Workspace` | Switches workspace and re-discovers models. |
-| `Databricks AI Gateway: Configure Claude Code` | Re-applies the Claude Code wiring on its own. |
-| `Databricks AI Gateway: Status and Actions` | Opens the quick pick above. Same as clicking the status bar item. |
-| `Databricks AI Gateway: Sign Out` | Deletes the stored refresh token and removes the keys it added to the Claude settings. |
-| `Databricks AI Gateway: Show Log` | Opens the output channel. |
+| `AI Gateway: Sign In` | Runs the browser sign-in, picks a workspace, discovers models, and wires up Claude Code. |
+| `AI Gateway: Select Workspace` | Switches workspace and re-discovers models. |
+| `AI Gateway: Configure Claude Code` | Re-applies the Claude Code wiring on its own. |
+| `AI Gateway: Status and Actions` | Opens the quick pick above. Same as clicking the status bar item. |
+| `AI Gateway: Sign Out` | Deletes the stored refresh token and removes the keys it added to the Claude settings. |
+| `AI Gateway: Show Log` | Opens the output channel. |
 
 ## Settings
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `databricksAigw.accountHost` | `https://accounts.cloud.databricks.com` | Databricks account console. |
-| `databricksAigw.accountId` | Databricks account UUID | Same account the setup scripts use. |
-| `databricksAigw.workspaceFilter` | `costcenter` | Case-insensitive substring. Empty lists every workspace. |
-| `databricksAigw.redirectPort` | `8020` | Loopback OAuth redirect port. Databricks allowlists this for the `databricks-cli` public client, so changing it will usually break sign-in. |
-| `databricksAigw.maxInputTokens` | `200000` | Context window advertised to VS Code for the base models. **The gateway reports `0` for its own limits**, so this is a local declaration. The `(1M context)` entries declare `872000` and ignore this. |
-| `databricksAigw.maxOutputTokens` | `64000` | Output cap advertised to VS Code for the base models. The `(1M context)` entries declare `128000`. |
-| `databricksAigw.offerOneMContext` | `true` | Offer the `(1M context)` entries. Set `false` on a workspace that is not entitled to the 1M window. |
-| `databricksAigw.configureClaudeCodeOnSignIn` | `true` | Set `false` to leave `~/.claude/settings.json` alone. |
-| `databricksAigw.tokenServicePort` | `0` | `0` picks a free loopback port per session. |
+| `aiGateway.accountHost` | `https://accounts.cloud.databricks.com` | Databricks account console. |
+| `aiGateway.accountId` | Databricks account UUID | Same account the setup scripts use. |
+| `aiGateway.workspaceFilter` | `costcenter` | Case-insensitive substring. Empty lists every workspace. |
+| `aiGateway.redirectPort` | `8020` | Loopback OAuth redirect port. Databricks allowlists this for the `databricks-cli` public client, so changing it will usually break sign-in. |
+| `aiGateway.maxInputTokens` | `200000` | Context window advertised to VS Code for the base models. **The gateway reports `0` for its own limits**, so this is a local declaration. The `(1M context)` entries declare `872000` and ignore this. |
+| `aiGateway.maxOutputTokens` | `64000` | Output cap advertised to VS Code for the base models. The `(1M context)` entries declare `128000`. |
+| `aiGateway.offerOneMContext` | `true` | Offer the `(1M context)` entries. Set `false` on a workspace that is not entitled to the 1M window. |
+| `aiGateway.configureClaudeCodeOnSignIn` | `true` | Set `false` to leave `~/.claude/settings.json` alone. |
+| `aiGateway.tokenServicePort` | `0` | `0` picks a free loopback port per session. |
 
 Both entries are listed, so the picker looks like this:
 
@@ -117,7 +129,7 @@ allowlist is deliberately a closed list rather than a guess.
 
 Listing both rather than switching a global setting keeps the choice per request:
 the 1M window is charged at a higher rate, so it is worth spending deliberately.
-If a workspace is not entitled to it, set `databricksAigw.offerOneMContext` to
+If a workspace is not entitled to it, set `aiGateway.offerOneMContext` to
 `false` to keep the variants out of the picker.
 
 ## How it works
@@ -151,7 +163,7 @@ sign-in is a single browser round trip rather than one per workspace.
 
 | Path | Contents |
 | --- | --- |
-| `~/.claude/settings.json` | Adds `apiKeyHelper` and `env` keys: `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_API_KEY_HELPER_TTL_MS`, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`, and an `ANTHROPIC_DEFAULT_*_MODEL` pin for each model family the gateway reports. Everything else is preserved, and the file is backed up to `settings.json.databricks-aigw.bak` first. A file that is present but unparseable aborts the write instead of being replaced. |
+| `~/.claude/settings.json` | Adds `apiKeyHelper` and `env` keys: `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_API_KEY_HELPER_TTL_MS`, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`, and an `ANTHROPIC_DEFAULT_*_MODEL` pin for each model family the gateway reports. Everything else is preserved, and the file is backed up to `settings.json.ai-gateway.bak` first. A file that is present but unparseable aborts the write instead of being replaced. |
 | Extension global storage | The `apiKeyHelper` script, created user-only (`0700`). |
 
 `Sign Out` removes those keys again and leaves the rest of the file untouched.
@@ -164,7 +176,7 @@ resolves to, which a gateway that hasn't caught up rejects with a 403 such as
 to the strongest version the gateway's `/v1/models` actually reports keeps Claude
 Code on an id the gateway accepts. The pins are refreshed every time the
 extension writes the Claude Code settings, so a newly rolled-out model is picked
-up automatically; `Databricks AI Gateway: Configure Claude Code` re-applies them
+up automatically; `AI Gateway: Configure Claude Code` re-applies them
 on demand.
 
 ## Relationship to the setup scripts
@@ -209,3 +221,11 @@ ug auth-token --host "$WORKSPACE" --profile "$PROFILE" \
 | `Port 8020 is already in use` | Another Databricks or Azure CLI login is holding the redirect port. |
 | Browser redirect never returns | The browser cannot reach the extension's listener (common on SSH remotes and some container setups). Click **Paste redirect URL instead** and paste the `http://localhost:8020/?code=...` address from the browser. |
 | Claude Code still uses the wrong endpoint | Restart the `claude` session; it reads settings at startup. Check for a machine-wide `managed-settings.json` from a previous `ug` run, which outranks the user file. |
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
+
+Databricks is a trademark of Databricks, Inc. This project is not affiliated
+with, endorsed by or supported by Databricks. Claude is a trademark of Anthropic,
+PBC.

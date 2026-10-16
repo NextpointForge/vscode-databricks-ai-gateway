@@ -12,7 +12,7 @@ export interface GatewayConfig {
   tokenServicePort: number;
 }
 
-export const VENDOR_ID = 'databricks-aigw';
+export const VENDOR_ID = 'ai-gateway';
 
 /** The public OAuth client Databricks ships for user-to-machine desktop flows. */
 export const OAUTH_CLIENT_ID = 'databricks-cli';
@@ -25,7 +25,7 @@ function trimTrailingSlash(value: string): string {
 }
 
 export function readConfig(): GatewayConfig {
-  const section = vscode.workspace.getConfiguration('databricksAigw');
+  const section = vscode.workspace.getConfiguration('aiGateway');
   return {
     accountHost: trimTrailingSlash(section.get<string>('accountHost') ?? ''),
     accountId: (section.get<string>('accountId') ?? '').trim(),
@@ -45,21 +45,21 @@ export function validateConfig(config: GatewayConfig): void {
   const accountHost = safeUrl(config.accountHost);
   if (!accountHost || accountHost.protocol !== 'https:') {
     throw new ConfigurationError(
-      `databricksAigw.accountHost must be an https URL, got ${config.accountHost || '(empty)'}.`,
+      `aiGateway.accountHost must be an https URL, got ${config.accountHost || '(empty)'}.`,
     );
   }
   if (!/^[0-9a-f-]{36}$/i.test(config.accountId)) {
-    throw new ConfigurationError('databricksAigw.accountId must be a Databricks account UUID.');
+    throw new ConfigurationError('aiGateway.accountId must be a Databricks account UUID.');
   }
   if (!Number.isInteger(config.redirectPort) || config.redirectPort < 1 || config.redirectPort > 65535) {
-    throw new ConfigurationError('databricksAigw.redirectPort must be a port number between 1 and 65535.');
+    throw new ConfigurationError('aiGateway.redirectPort must be a port number between 1 and 65535.');
   }
   for (const [key, value] of [
     ['maxInputTokens', config.maxInputTokens],
     ['maxOutputTokens', config.maxOutputTokens],
   ] as const) {
     if (!Number.isInteger(value) || value <= 0) {
-      throw new ConfigurationError(`databricksAigw.${key} must be a positive integer.`);
+      throw new ConfigurationError(`aiGateway.${key} must be a positive integer.`);
     }
   }
 }

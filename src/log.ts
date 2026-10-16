@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 let channel: vscode.LogOutputChannel | undefined;
 
 export function initLog(): vscode.LogOutputChannel {
-  channel ??= vscode.window.createOutputChannel('Databricks AI Gateway', { log: true });
+  channel ??= vscode.window.createOutputChannel('AI Gateway Models', { log: true });
   return channel;
 }
 

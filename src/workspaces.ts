@@ -122,7 +122,7 @@ export async function chooseWorkspace(
   if (eligible.length === 0) {
     throw new Error(
       `No workspace name contains "${config.workspaceFilter}". ` +
-        `Your login sees ${all.length} workspace(s). Adjust databricksAigw.workspaceFilter to widen the search.`,
+        `Your login sees ${all.length} workspace(s). Adjust aiGateway.workspaceFilter to widen the search.`,
     );
   }
 
@@ -138,7 +138,7 @@ export async function chooseWorkspace(
       workspace,
     })),
     {
-      title: 'Select a Databricks AI Gateway workspace',
+      title: 'Select an AI Gateway workspace',
       placeHolder: 'Claude models are discovered from the workspace you pick',
       ignoreFocusOut: true,
       matchOnDetail: true,

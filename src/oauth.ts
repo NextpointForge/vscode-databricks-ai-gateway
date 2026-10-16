@@ -27,7 +27,7 @@ export function createPkce(): Pkce {
 }
 
 const RESULT_PAGE = (heading: string, detail: string) =>
-  `<!doctype html><html><head><meta charset="utf-8"><title>Databricks AI Gateway</title>
+  `<!doctype html><html><head><meta charset="utf-8"><title>AI Gateway</title>
 <style>body{font:15px/1.5 system-ui,sans-serif;margin:8vh auto;max-width:34rem;padding:0 1.5rem;color:#1c1c1c}
 h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#555;margin:0}</style></head>
 <body><h1>${heading}</h1><p>${detail}</p></body></html>`;
@@ -191,7 +191,7 @@ async function promptForRedirectedUrl(
 
   for (;;) {
     const pasted = await vscode.window.showInputBox({
-      title: 'Databricks AI Gateway sign-in',
+      title: 'AI Gateway sign-in',
       prompt: `Paste the full localhost URL your browser was redirected to (it starts with http://localhost).`,
       placeHolder: 'http://localhost:8020/?code=...&state=...',
       ignoreFocusOut: true,

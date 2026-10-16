@@ -3,9 +3,13 @@ src/**
 test/**
 out/**
 docs/**
+.devcontainer/**
+.github/**
 node_modules/**
 !README.md
+!LICENSE
 tsconfig.json
+package-lock.json
 .gitignore
 *.vsix
 **/*.map
