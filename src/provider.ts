@@ -549,7 +549,7 @@ function toDataBlock(
  * buffered per content-block index and emitted at `content_block_stop`, which
  * keeps tool calls in the same position they held in the model's output.
  */
-class StreamRelay {
+export class StreamRelay {
   private readonly pendingTools = new Map<number, { id: string; name: string; json: string }>();
   private usage = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
   private sawUsage = false;
@@ -629,10 +629,13 @@ class StreamRelay {
     }
   }
 
-  /** Flushes any block the stream ended without closing (cancellation, truncation). */
+  /** Flushes any block the stream ended without closing, then reports usage. */
   finish(): void {
     for (const index of [...this.pendingTools.keys()]) {
       this.emitTool(index);
+    }
+    if (this.sawUsage) {
+      this.progress.report(usagePart(this.usage));
     }
   }
 
@@ -668,6 +671,31 @@ class StreamRelay {
 
     this.progress.report(new vscode.LanguageModelToolCallPart(pending.id, pending.name, input));
   }
+}
+
+/**
+ * Copilot Chat reads a `usage` data part from contributed models to fill its
+ * context window widget. The mime type and the OpenAI-shaped payload are
+ * Copilot internals, not a published API; other consumers ignore the part.
+ */
+export const USAGE_MIME_TYPE = 'usage';
+
+function usagePart(usage: { input: number; cacheRead: number; cacheWrite: number; output: number }) {
+  // Anthropic counts cached input separately; OpenAI's prompt_tokens includes it.
+  const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+  const payload = {
+    prompt_tokens: promptTokens,
+    completion_tokens: usage.output,
+    total_tokens: promptTokens + usage.output,
+    prompt_tokens_details: {
+      cached_tokens: usage.cacheRead,
+      cache_creation_input_tokens: usage.cacheWrite,
+    },
+  };
+  return new vscode.LanguageModelDataPart(
+    new TextEncoder().encode(JSON.stringify(payload)),
+    USAGE_MIME_TYPE,
+  );
 }
 
 function isUnauthorized(error: unknown): boolean {

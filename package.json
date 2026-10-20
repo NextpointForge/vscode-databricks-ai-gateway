@@ -2,7 +2,7 @@
   "name": "aigw-models",
   "displayName": "NextpointForge AI Gateway Models",
   "description": "Experimental and unofficial, not affiliated with or supported by Databricks: signs in to a Databricks AI Gateway and exposes the approved Claude models to VS Code chat and Claude Code.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "NextpointForge",
   "license": "Apache-2.0",
   "preview": true,

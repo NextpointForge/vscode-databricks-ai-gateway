@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2
+
+- Each response now reports the gateway's token usage to Copilot Chat, so the
+  context window indicator in the chat input shows real usage instead of 0%.
+  Cached input counts toward the prompt. This relies on an undocumented Copilot
+  convention (a `usage` data part); session cost is still not shown, because
+  that field only holds Copilot credits.
+
 ## 0.2.1
 
 - Per-model token limits are now measured from the gateway instead of declared

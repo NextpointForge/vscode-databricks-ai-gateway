@@ -10,7 +10,14 @@ import {
     forgetModelLimits,
     sortModels
 } from '../src/models';
-import { GatewayChatProvider, SessionState, applyCacheBreakpoints, toAnthropicMessages } from '../src/provider';
+import {
+    GatewayChatProvider,
+    SessionState,
+    StreamRelay,
+    USAGE_MIME_TYPE,
+    applyCacheBreakpoints,
+    toAnthropicMessages,
+} from '../src/provider';
 import { StatusSnapshot, buildStatusMenu, describeSnapshot } from '../src/statusMenu';
 import { filterWorkspaces } from '../src/workspaces';
 
@@ -120,6 +127,59 @@ test('messages: text turns map to Anthropic roles', () => {
     { role: 'user', content: [{ type: 'text', text: 'hello' }] },
     { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
   ]);
+});
+
+function relayParts(events: unknown[]): unknown[] {
+  const parts: unknown[] = [];
+  const relay = new StreamRelay({ report: (part) => parts.push(part) });
+  for (const event of events) {
+    relay.handle(event as never);
+  }
+  relay.finish();
+  return parts;
+}
+
+function usagePayloads(parts: unknown[]): unknown[] {
+  return parts
+    .filter(
+      (part): part is vscode.LanguageModelDataPart =>
+        part instanceof vscode.LanguageModelDataPart && part.mimeType === USAGE_MIME_TYPE,
+    )
+    .map((part) => JSON.parse(new TextDecoder().decode(part.data)));
+}
+
+test('usage: gateway token counts are reported once, last, in the shape Copilot reads', () => {
+  const parts = relayParts([
+    {
+      type: 'message_start',
+      message: {
+        usage: {
+          input_tokens: 100,
+          cache_read_input_tokens: 4000,
+          cache_creation_input_tokens: 500,
+          output_tokens: 1,
+        },
+      },
+    },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
+    { type: 'message_delta', usage: { output_tokens: 42 } },
+  ]);
+  assert.deepEqual(usagePayloads(parts), [
+    {
+      prompt_tokens: 4600,
+      completion_tokens: 42,
+      total_tokens: 4642,
+      prompt_tokens_details: { cached_tokens: 4000, cache_creation_input_tokens: 500 },
+    },
+  ]);
+  assert.ok(parts.at(-1) instanceof vscode.LanguageModelDataPart);
+});
+
+test('usage: nothing is reported when the gateway sends no usage', () => {
+  const parts = relayParts([
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
+  ]);
+  assert.deepEqual(usagePayloads(parts), []);
 });
 
 test('cache: breakpoints land on the last tool and the last message block only', () => {
