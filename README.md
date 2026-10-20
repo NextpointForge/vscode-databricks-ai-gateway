@@ -105,32 +105,65 @@ still comes from the status bar or the command palette.
 | `aiGateway.accountId` | Databricks account UUID | Same account the setup scripts use. |
 | `aiGateway.workspaceFilter` | `costcenter` | Case-insensitive substring. Empty lists every workspace. |
 | `aiGateway.redirectPort` | `8020` | Loopback OAuth redirect port. Databricks allowlists this for the `databricks-cli` public client, so changing it will usually break sign-in. |
-| `aiGateway.maxInputTokens` | `200000` | Context window advertised to VS Code for the base models. **The gateway reports `0` for its own limits**, so this is a local declaration. The `(1M context)` entries declare `872000` and ignore this. |
-| `aiGateway.maxOutputTokens` | `64000` | Output cap advertised to VS Code for the base models. The `(1M context)` entries declare `128000`. |
-| `aiGateway.offerOneMContext` | `true` | Offer the `(1M context)` entries. Set `false` on a workspace that is not entitled to the 1M window. |
+| `aiGateway.maxInputTokens` | `200000` | Fallback context window. Real limits are measured per model, so this applies only when a measurement could not be read. |
+| `aiGateway.maxOutputTokens` | `64000` | Fallback output cap, used on the same terms as above. |
 | `aiGateway.configureClaudeCodeOnSignIn` | `true` | Set `false` to leave `~/.claude/settings.json` alone. |
 | `aiGateway.tokenServicePort` | `0` | `0` picks a free loopback port per session. |
 
-Both entries are listed, so the picker looks like this:
+## Token limits
+
+`/v1/models` reports `max_input_tokens` and `max_tokens` as `0` for every model,
+and the gateway has no `count_tokens` endpoint, so the real limits are measured
+by asking for something impossible and reading the refusal:
 
 ```
-  ✦ Claude Opus 5                                        …claude-opus-5
-  ✦ Claude Opus 5 (1M context)                       …claude-opus-5[1m]
-  ✦ Claude Haiku 4.5                                  …claude-haiku-4-5
+max_tokens: 9000000 > 128000, which is the maximum allowed number of output tokens
+prompt is too long: 1200000 tokens > 1000000 maximum
 ```
 
-The `[1m]` suffix is this extension's own label and never reaches the gateway,
-which 404s every suffixed spelling. A request for a `(1M context)` entry is sent
-against the **base** model id with the `anthropic-beta: context-1m-2025-08-07`
-header, which is how the gateway opens the wider window.
+Both probes are rejected during validation, so no inference runs and no tokens
+are billed. The limits genuinely vary — on the workspace this was developed
+against, Opus 5.x and Sonnet 4.6+ serve a 1,000,000-token window with a 128,000
+output cap, while Opus 4.5 and Haiku 4.5 serve 200,000 and 64,000 — which is why
+they are measured rather than declared.
 
-Haiku, older models and anything the gateway newly reports get no variant — the
-allowlist is deliberately a closed list rather than a guess.
+The output cap costs ~100 bytes to read, but the context probe has to upload
+~1.1 MB to overshoot a 1M window. Models are therefore grouped by their output
+cap and one context probe is shared per group, which on the workspace this was
+developed against turns 11 large uploads into 2 — 3.4 MB rather than 12.6 MB,
+with identical results.
 
-Listing both rather than switching a global setting keeps the choice per request:
-the 1M window is charged at a higher rate, so it is worth spending deliberately.
-If a workspace is not entitled to it, set `aiGateway.offerOneMContext` to
-`false` to keep the variants out of the picker.
+Results are remembered in the extension's global state, keyed by workspace and
+model id. A first sign-in measures; later ones spend nothing, and a model
+Databricks adds later is measured on its own. Use **Re-measure token limits** in
+the status menu to discard them and measure again.
+
+A model whose refusal cannot be parsed falls back to the settings above and is
+retried after a day rather than on every launch.
+
+## Thinking effort
+
+The same probing reads how each model expects thinking to be controlled, which
+the gateway also refuses to advertise. Two incompatible shapes are served, and
+sending the wrong one is rejected:
+
+| Thinking API | Models (on the workspace this was developed against) |
+| --- | --- |
+| `thinking: {type: "adaptive"}` + `output_config.effort` | Opus 4.7, 4.8, 5, 5.5; Sonnet 5, 5.5 |
+| `thinking: {type: "enabled"}` + `budget_tokens` | Opus 4.5, 4.6; Sonnet 4.5, 4.6; Haiku 4.5 |
+
+For the adaptive models, the accepted effort levels are read from the gateway
+(`low`, `medium`, `high`, `xhigh`, `max`) and offered as a **Thinking Effort**
+dropdown on the model in the chat model picker. Effort measurably changes how
+much the model thinks — on a trivial arithmetic prompt, `low` spent 32 thinking
+tokens and `max` spent 116.
+
+The dropdown relies on `configurationSchema`, which is still a proposed VS Code
+API. A host that does not support it ignores the property, and requests are then
+sent without an explicit effort so the gateway applies its own default.
+
+Budget-style models are sent no thinking parameters at all: they already think
+by default, and `budget_tokens` would only cap what they do anyway.
 
 ## How it works
 

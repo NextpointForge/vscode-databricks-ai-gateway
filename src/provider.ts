@@ -11,7 +11,7 @@ import { AuthManager, NotSignedInError } from './auth';
 import { readConfig } from './config';
 import { createGatewayClient } from './gateway';
 import { log } from './log';
-import { GatewayModel, ONE_M_BETA, gatewayModelId, isOneMVariant } from './models';
+import { GatewayModel } from './models';
 import { describe } from './oauth';
 
 /**
@@ -108,8 +108,8 @@ export class GatewayChatProvider implements vscode.LanguageModelChatProvider {
       name: model.displayName,
       family: familyOf(model.id),
       version: model.id,
-      // The gateway reports 0 for both limits, so these are local declarations.
-      // The `[1m]` entries carry their own limits; base models follow the settings.
+      // The gateway reports 0 for both limits; these were measured at discovery,
+      // and the settings cover any model whose probe could not be parsed.
       maxInputTokens: model.maxInputTokens ?? config.maxInputTokens,
       maxOutputTokens: model.maxOutputTokens ?? config.maxOutputTokens,
       tooltip: `${model.displayName} via the AI Gateway (${session.workspaceName})`,
@@ -118,6 +118,7 @@ export class GatewayChatProvider implements vscode.LanguageModelChatProvider {
         toolCalling: true,
         imageInput: true,
       },
+      ...effortSchema(model),
     }));
     return this.lastPublished;
   }
@@ -191,18 +192,18 @@ export class GatewayChatProvider implements vscode.LanguageModelChatProvider {
     const config = readConfig();
     const { messages: anthropicMessages } = toAnthropicMessages(messages);
     const maxOutputTokens = model.maxOutputTokens ?? config.maxOutputTokens;
+    const maxTokens = clampMaxTokens(options.modelOptions?.['max_tokens'], maxOutputTokens);
 
     const body: Anthropic.MessageStreamParams = {
-      // The `[1m]` suffix is this extension's label; the gateway serves the wider
-      // window on the base id behind the beta flag added in streamOnce.
-      model: gatewayModelId(model.id),
-      max_tokens: clampMaxTokens(options.modelOptions?.['max_tokens'], maxOutputTokens),
+      model: model.id,
+      max_tokens: maxTokens,
       messages: anthropicMessages,
       ...toolParams(options),
+      ...thinkingParams(session.models.find((entry) => entry.id === model.id), options, maxTokens),
     };
     applyCacheBreakpoints(body);
 
-    await this.streamOnce(session, body, progress, token, /* allowRetry */ true, isOneMVariant(model.id));
+    await this.streamOnce(session, body, progress, token, /* allowRetry */ true);
   }
 
   /**
@@ -215,7 +216,6 @@ export class GatewayChatProvider implements vscode.LanguageModelChatProvider {
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     token: vscode.CancellationToken,
     allowRetry: boolean,
-    oneMContext = false,
   ): Promise<void> {
     const accessToken = await this.auth.getAccessToken();
     const client = this.createClient(session.workspaceOrigin, accessToken);
@@ -223,10 +223,7 @@ export class GatewayChatProvider implements vscode.LanguageModelChatProvider {
     const abort = new AbortController();
     const subscription = token.onCancellationRequested(() => abort.abort());
     try {
-      const stream = client.messages.stream(body, {
-        signal: abort.signal,
-        ...(oneMContext ? { headers: { 'anthropic-beta': ONE_M_BETA } } : {}),
-      });
+      const stream = client.messages.stream(body, { signal: abort.signal });
       const relay = new StreamRelay(progress);
       let cancelled = false;
       for await (const event of stream as AsyncIterable<MessageStreamEvent>) {
@@ -251,7 +248,7 @@ export class GatewayChatProvider implements vscode.LanguageModelChatProvider {
       if (allowRetry && isUnauthorized(error)) {
         log.debug('Gateway returned 401 mid-request; retrying once with a new token.');
         this.auth.invalidate(accessToken);
-        await this.streamOnce(session, body, progress, token, /* allowRetry */ false, oneMContext);
+        await this.streamOnce(session, body, progress, token, /* allowRetry */ false);
         return;
       }
       // translateError replaces the gateway's own wording with advice, so the
@@ -320,6 +317,79 @@ function clampMaxTokens(requested: unknown, maxOutputTokens: number): number {
     ? requested
     : maxOutputTokens;
   return Math.min(value, maxOutputTokens);
+}
+
+/** Reads better than `low`/`xhigh` in the picker. */
+const EFFORT_LABELS: Record<string, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra High',
+  max: 'Maximum',
+};
+
+const EFFORT_DESCRIPTIONS: Record<string, string> = {
+  low: 'Fastest, least thorough',
+  medium: 'Balanced reasoning and speed',
+  high: 'Thorough reasoning',
+  xhigh: 'Deeper reasoning, slower',
+  max: 'Slowest, most thorough',
+};
+
+/**
+ * Offers the measured effort levels as a dropdown on the model in the picker.
+ *
+ * `configurationSchema` is a proposed API, so the cast keeps this compiling
+ * against the stable `@types/vscode`; a host that does not understand the
+ * property ignores it, which costs nothing.
+ */
+function effortSchema(model: GatewayModel): Record<string, unknown> {
+  if (model.thinkingStyle !== 'adaptive' || !model.effortLevels?.length) {
+    return {};
+  }
+  const levels = model.effortLevels;
+  return {
+    configurationSchema: {
+      properties: {
+        reasoningEffort: {
+          type: 'string',
+          title: 'Thinking Effort',
+          enum: levels,
+          enumItemLabels: levels.map((level) => EFFORT_LABELS[level] ?? level),
+          enumDescriptions: levels.map((level) => EFFORT_DESCRIPTIONS[level] ?? ''),
+          default: levels.includes('medium') ? 'medium' : levels[0],
+          group: 'navigation',
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Turns the picker's effort choice into the thinking parameters this model accepts.
+ *
+ * The two styles are mutually exclusive and the gateway rejects the wrong one,
+ * so nothing is sent for a model whose style was never measured. Budget-style
+ * models get no parameters either: they think by default, and `budget_tokens`
+ * would only cap what they already do.
+ */
+function thinkingParams(
+  model: GatewayModel | undefined,
+  options: vscode.ProvideLanguageModelChatResponseOptions,
+  maxTokens: number,
+): Record<string, unknown> {
+  if (model?.thinkingStyle !== 'adaptive') {
+    return {};
+  }
+  const requested = (options as { modelConfiguration?: Record<string, unknown> })
+    .modelConfiguration?.['reasoningEffort'];
+  const effort =
+    typeof requested === 'string' && model.effortLevels?.includes(requested) ? requested : undefined;
+  // `max` can spend the whole budget on thinking, so a tiny cap would fail.
+  if (!effort || maxTokens < 1024) {
+    return { thinking: { type: 'adaptive' } };
+  }
+  return { thinking: { type: 'adaptive' }, output_config: { effort } };
 }
 
 function toolParams(

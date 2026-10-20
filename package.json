@@ -2,7 +2,7 @@
   "name": "aigw-models",
   "displayName": "NextpointForge AI Gateway Models",
   "description": "Experimental and unofficial, not affiliated with or supported by Databricks: signs in to a Databricks AI Gateway and exposes the approved Claude models to VS Code chat and Claude Code.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "NextpointForge",
   "license": "Apache-2.0",
   "preview": true,
@@ -117,17 +117,12 @@
         "aiGateway.maxInputTokens": {
           "type": "number",
           "default": 200000,
-          "description": "Context window advertised to VS Code chat for the base models. The gateway does not report per-model limits, so this is a local declaration. The separate \"(1M context)\" entries declare 872000 themselves and ignore this setting."
+          "description": "Fallback context window advertised to VS Code chat. Real per-model limits are measured from the gateway on sign-in, so this applies only to a model whose limit could not be read."
         },
         "aiGateway.maxOutputTokens": {
           "type": "number",
           "default": 64000,
-          "description": "Maximum output tokens advertised to VS Code chat."
-        },
-        "aiGateway.offerOneMContext": {
-          "type": "boolean",
-          "default": true,
-          "description": "Also offer a \"(1M context)\" entry for each model the gateway serves with the 1M context window. The gateway routes that window as a separate model id (a [1m] suffix) and does not advertise it, so these entries are added locally. Turn this off if the workspace is not entitled to the 1M window."
+          "description": "Fallback output cap advertised to VS Code chat. Real per-model limits are measured from the gateway on sign-in, so this applies only to a model whose limit could not be read."
         },
         "aiGateway.configureClaudeCodeOnSignIn": {
           "type": "boolean",

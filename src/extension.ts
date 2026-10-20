@@ -4,7 +4,7 @@ import { GatewayAuthenticationProvider } from './authProvider';
 import { ClaudeCodeConfigurator, claudeSettingsPath } from './claudeCode';
 import { ConfigurationError, VENDOR_ID, readConfig, requireWorkspaceOrigin } from './config';
 import { initLog, log } from './log';
-import { GatewayModel, discoverModels } from './models';
+import { GatewayModel, discoverModels, forgetModelLimits } from './models';
 import { describe } from './oauth';
 import { GatewayChatProvider, SessionState } from './provider';
 import {
@@ -111,7 +111,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           } satisfies StoredWorkspace);
         }
 
-        const models = await discoverModels(auth, workspace.origin);
+        const models = await discoverModels(auth, workspace.origin, context.globalState);
         session = {
           workspaceOrigin: workspace.origin,
           workspaceName: workspace.name,
@@ -167,7 +167,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     try {
       const origin = requireWorkspaceOrigin(stored.origin);
-      const models = await discoverModels(auth, origin);
+      const models = await discoverModels(auth, origin, context.globalState);
       await claudeCode.apply(origin, models);
       log.info('Refreshed the Claude Code helper for this session.');
     } catch (error) {
@@ -220,7 +220,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } satisfies StoredWorkspace);
 
         progress.report({ message: `Discovering models on ${workspace.name}…` });
-        const models = await discoverModels(auth, workspace.origin);
+        const models = await discoverModels(auth, workspace.origin, context.globalState);
         session = { workspaceOrigin: workspace.origin, workspaceName: workspace.name, models };
         updateStatus();
         provider.refresh();
@@ -263,6 +263,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const signOut = async (): Promise<void> => {
     await auth.signOut();
     await context.globalState.update(WORKSPACE_STATE_KEY, undefined);
+    await forgetModelLimits(context.globalState);
     session = undefined;
     tokenService.dispose();
     await claudeCode.revert();
@@ -291,7 +292,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     } satisfies StoredWorkspace);
 
     await tokenService.start(config.tokenServicePort);
-    const models = await discoverModels(auth, workspace.origin);
+    const models = await discoverModels(auth, workspace.origin, context.globalState);
     session = { workspaceOrigin: workspace.origin, workspaceName: workspace.name, models };
     updateStatus();
     provider.refresh();
@@ -374,6 +375,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           active
             ? `${active.workspaceName}: ${active.models.length} Claude model(s).`
             : 'No models were discovered.',
+        );
+        return;
+      }
+      case 'remeasureLimits': {
+        await forgetModelLimits(context.globalState);
+        session = undefined;
+        const remeasured = await resolveSession(false);
+        updateStatus();
+        provider.refresh();
+        void vscode.window.showInformationMessage(
+          remeasured
+            ? `Re-measured token limits for ${remeasured.models.length} model(s).`
+            : 'The remembered token limits were cleared.',
         );
         return;
       }
@@ -467,13 +481,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!event.affectsConfiguration('aiGateway')) {
         return;
       }
-      // The 1M variants are synthesized during discovery and cached in the session,
-      // so the toggle only takes effect if the list is discovered again.
       if (
         event.affectsConfiguration('aiGateway.accountId') ||
         event.affectsConfiguration('aiGateway.accountHost') ||
-        event.affectsConfiguration('aiGateway.workspaceFilter') ||
-        event.affectsConfiguration('aiGateway.offerOneMContext')
+        event.affectsConfiguration('aiGateway.workspaceFilter')
       ) {
         session = undefined;
         updateStatus();

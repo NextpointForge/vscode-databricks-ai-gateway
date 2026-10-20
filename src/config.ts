@@ -7,7 +7,6 @@ export interface GatewayConfig {
   redirectPort: number;
   maxInputTokens: number;
   maxOutputTokens: number;
-  offerOneMContext: boolean;
   configureClaudeCodeOnSignIn: boolean;
   tokenServicePort: number;
 }
@@ -33,7 +32,6 @@ export function readConfig(): GatewayConfig {
     redirectPort: section.get<number>('redirectPort') ?? 8020,
     maxInputTokens: section.get<number>('maxInputTokens') ?? 200_000,
     maxOutputTokens: section.get<number>('maxOutputTokens') ?? 64_000,
-    offerOneMContext: section.get<boolean>('offerOneMContext') ?? true,
     configureClaudeCodeOnSignIn: section.get<boolean>('configureClaudeCodeOnSignIn') ?? true,
     tokenServicePort: section.get<number>('tokenServicePort') ?? 0,
   };

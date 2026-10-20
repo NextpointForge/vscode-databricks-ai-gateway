@@ -4,13 +4,11 @@ import * as vscode from 'vscode';
 import { accountLabel } from '../src/authProvider';
 import { ConfigurationError, accountAuthorizeUrl, anthropicBaseUrl, readConfig, requireWorkspaceOrigin, validateConfig } from '../src/config';
 import {
-  claudeCodeModelPins,
-  discoverModels,
-  gatewayModelId,
-  isOneMVariant,
-  sortModels,
-  supportsOneMContext,
-  withOneMVariants
+    LimitStore,
+    claudeCodeModelPins,
+    discoverModels,
+    forgetModelLimits,
+    sortModels
 } from '../src/models';
 import { GatewayChatProvider, SessionState, applyCacheBreakpoints, toAnthropicMessages } from '../src/provider';
 import { StatusSnapshot, buildStatusMenu, describeSnapshot } from '../src/statusMenu';
@@ -27,7 +25,6 @@ function setConfig(values: Record<string, unknown>): void {
     redirectPort: 8020,
     maxInputTokens: 200000,
     maxOutputTokens: 64000,
-    offerOneMContext: true,
     configureClaudeCodeOnSignIn: true,
     tokenServicePort: 0,
   };
@@ -276,86 +273,6 @@ test('models: strongest family first, newest version first within a family', () 
   );
 });
 
-test('models: only the allowlisted models take the [1m] suffix', () => {
-  for (const id of [
-    'system.ai.claude-opus-4-6',
-    'system.ai.claude-opus-4-7',
-    'system.ai.claude-opus-4-8',
-    'system.ai.claude-opus-5',
-    'system.ai.claude-sonnet-4-6',
-    'system.ai.claude-sonnet-5',
-    'system.ai.claude-fable-5',
-    'system.ai.claude-fable-5-1',
-    'claude-opus-5',
-    'SYSTEM.AI.CLAUDE-OPUS-5',
-    'system.ai.claude-opus-5[1m]',
-  ]) {
-    assert.equal(supportsOneMContext(id), true, `${id} should support the 1M window`);
-  }
-  for (const id of [
-    'system.ai.claude-haiku-4-5',
-    'system.ai.claude-opus-4-5',
-    'system.ai.claude-sonnet-4-5',
-    'system.ai.claude-opus-9',
-    '',
-  ]) {
-    assert.equal(supportsOneMContext(id), false, `${id} should not support the 1M window`);
-  }
-});
-
-test('models: a 1M variant is synthesized only for compatible models', () => {
-  const expanded = withOneMVariants([
-    { id: 'system.ai.claude-opus-5', displayName: 'Claude Opus 5' },
-    { id: 'system.ai.claude-haiku-4-5', displayName: 'Claude Haiku 4.5' },
-  ]);
-  assert.deepEqual(
-    expanded.map((model) => [model.id, model.displayName, model.maxInputTokens, model.maxOutputTokens]),
-    [
-      ['system.ai.claude-opus-5', 'Claude Opus 5', undefined, undefined],
-      ['system.ai.claude-opus-5[1m]', 'Claude Opus 5 (1M context)', 872000, 128000],
-      ['system.ai.claude-haiku-4-5', 'Claude Haiku 4.5', undefined, undefined],
-    ],
-  );
-});
-
-test('models: an id the gateway already reports as [1m] is labelled, not doubled', () => {
-  const expanded = withOneMVariants([
-    { id: 'system.ai.claude-opus-5[1m]', displayName: 'Claude Opus 5 1m' },
-  ]);
-  assert.equal(expanded.length, 1);
-  assert.deepEqual(
-    [expanded[0]!.maxInputTokens, expanded[0]!.maxOutputTokens],
-    [872000, 128000],
-  );
-});
-
-test('models: the [1m] suffix does not disturb version ordering', () => {
-  const sorted = sortModels(
-    withOneMVariants(
-      [
-        'system.ai.claude-haiku-4-5',
-        'system.ai.claude-opus-4-8',
-        'system.ai.claude-opus-5',
-        'system.ai.claude-sonnet-5',
-      ].map((id) => ({ id, displayName: id })),
-    ),
-  );
-  assert.deepEqual(
-    sorted.map((model) => model.id),
-    [
-      // Each variant sits directly behind the model it widens, and the trailing
-      // "1" in "[1m]" must not be read as a version number.
-      'system.ai.claude-opus-5',
-      'system.ai.claude-opus-5[1m]',
-      'system.ai.claude-opus-4-8',
-      'system.ai.claude-opus-4-8[1m]',
-      'system.ai.claude-sonnet-5',
-      'system.ai.claude-sonnet-5[1m]',
-      'system.ai.claude-haiku-4-5',
-    ],
-  );
-});
-
 test('models: the real gateway list sorts with Opus 5 first', () => {
   // The nine models the live gateway reported during development.
   const ids = [
@@ -376,16 +293,60 @@ test('models: the real gateway list sorts with Opus 5 first', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 1M-context entries. The gateway serves the wider window on the *base* model id
-// behind a beta flag: every `[1m]`-suffixed spelling 404s. So the suffix is a
-// local label, and these tests pin that it never reaches the gateway.
+// Token limits. `/v1/models` reports both limits as 0, so they are measured by
+// provoking a validation error — which the gateway answers without running any
+// inference. The measurement is remembered, so these tests pin that a known
+// model is never probed twice.
 // ---------------------------------------------------------------------------
 
 const PROBE_ORIGIN = 'https://dbc-00000000-0000.cloud.databricks.com';
 
-/** Stands in for the gateway's `/v1/models`, recording every id requested. */
-function gatewayStub(options: { models?: string[] }): {
-  requested: string[];
+interface ProbeBody {
+  model?: string;
+  max_tokens?: number;
+  thinking?: { type?: string; budget_tokens?: number };
+  output_config?: { effort?: string };
+  messages?: { content?: unknown }[];
+}
+
+/** Classifies a probe the way the gateway's own wording lets the prober do. */
+function probeKind(body: ProbeBody): 'thinkingStyle' | 'effort' | 'outputCap' | 'context' {
+  if (body.thinking?.budget_tokens !== undefined) {
+    return 'thinkingStyle';
+  }
+  if (body.output_config !== undefined) {
+    return 'effort';
+  }
+  return (body.max_tokens ?? 0) > 1_000_000 ? 'outputCap' : 'context';
+}
+
+/** Error bodies in the gateway's own wording, keyed by what each probe asks. */
+function rejection(body: ProbeBody): string {
+  const model = String(body.model);
+  // The live gateway's split: Opus 5.x / Sonnet 5.x take adaptive thinking and
+  // the wider window; the older models take budget_tokens and 200k.
+  const adaptive = /opus-5|sonnet-5/.test(model);
+  const wrap = (message: string) => JSON.stringify({ error_code: 'BAD_REQUEST', message: `{"message":${JSON.stringify(message)}}` });
+
+  switch (probeKind(body)) {
+    case 'thinkingStyle':
+      return adaptive
+        ? wrap('"thinking.type.enabled" is not supported for this model. Use "thinking.type.adaptive" and "output_config.effort" to control thinking behavior.')
+        : wrap('`max_tokens` must be greater than `thinking.budget_tokens`.');
+    case 'effort':
+      return wrap('unknown variant `\u0000`, expected one of `low`, `medium`, `high`, `xhigh`, `max`, `Unhandled` at line 1 column 79');
+    case 'outputCap':
+      return wrap(`max_tokens: 9000000 > ${adaptive ? 128000 : 64000}, which is the maximum allowed number of output tokens for ${model}`);
+    case 'context':
+      return wrap(`prompt is too long: 1200000 tokens > ${adaptive ? 1000000 : 200000} maximum`);
+  }
+}
+
+/** Stands in for the gateway, recording the probes discovery spends. */
+function gatewayStub(options: { models?: string[]; unparsable?: boolean } = {}): {
+  probes: string[];
+  /** Only the ~1.1MB context probes, which are the ones worth not repeating. */
+  contextProbes: string[];
   restore: () => void;
 } {
   const models = options.models ?? [
@@ -393,7 +354,8 @@ function gatewayStub(options: { models?: string[] }): {
     'system.ai.claude-sonnet-5',
     'system.ai.claude-haiku-4-5',
   ];
-  const requested: string[] = [];
+  const probes: string[] = [];
+  const contextProbes: string[] = [];
   const original = globalThis.fetch;
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -404,40 +366,270 @@ function gatewayStub(options: { models?: string[] }): {
         headers: { 'Content-Type': 'application/json' },
       });
     }
-    const body = JSON.parse(String(init?.body ?? '{}')) as { model?: string };
-    requested.push(String(body.model));
-    throw new Error(`discovery must not send completions, got ${url}`);
+    const body = JSON.parse(String(init?.body ?? '{}')) as ProbeBody;
+    probes.push(String(body.model));
+    if (probeKind(body) === 'context') {
+      contextProbes.push(String(body.model));
+    }
+    // Every probe is rejected, which is exactly why it costs no tokens.
+    return new Response(
+      options.unparsable
+        ? JSON.stringify({ error_code: 'BAD_REQUEST', message: '{"message":"Input is too long for requested model."}' })
+        : rejection(body),
+      { status: 400, headers: { 'Content-Type': 'application/json' } },
+    );
   }) as typeof globalThis.fetch;
 
-  return { requested, restore: () => { globalThis.fetch = original; } };
+  return { probes, contextProbes, restore: () => { globalThis.fetch = original; } };
 }
 
 const probeAuth = { getAccessToken: async () => 'test-token', invalidate: () => undefined };
 
-test('models: discovery spends no completion requests on the 1M entries', async () => {
+/** Stands in for `context.globalState`. */
+function memoryStore(): LimitStore & { data: Map<string, unknown> } {
+  const data = new Map<string, unknown>();
+  return {
+    data,
+    get: <T>(key: string) => data.get(key) as T | undefined,
+    update: async (key: string, value: unknown) => {
+      if (value === undefined) {
+        data.delete(key);
+      } else {
+        data.set(key, value);
+      }
+    },
+  };
+}
+
+test('models: limits are measured from the gateway rather than guessed', async () => {
   setConfig({});
-  const stub = gatewayStub({});
+  const stub = gatewayStub();
   try {
-    const discovered = await discoverModels(probeAuth as never, PROBE_ORIGIN);
-    assert.deepEqual(discovered.map((model) => model.id), [
-      'system.ai.claude-opus-5',
-      'system.ai.claude-opus-5[1m]',
-      'system.ai.claude-sonnet-5',
-      'system.ai.claude-sonnet-5[1m]',
-      'system.ai.claude-haiku-4-5',
-    ]);
-    assert.deepEqual(stub.requested, [], 'the suffix is local, so nothing needs probing');
+    const discovered = await discoverModels(probeAuth as never, PROBE_ORIGIN, memoryStore());
+    assert.deepEqual(
+      discovered.map((model) => [model.id, model.maxInputTokens, model.maxOutputTokens]),
+      [
+        ['system.ai.claude-opus-5', 1000000, 128000],
+        ['system.ai.claude-sonnet-5', 1000000, 128000],
+        ['system.ai.claude-haiku-4-5', 200000, 64000],
+      ],
+    );
   } finally {
     stub.restore();
   }
 });
 
-test('models: the [1m] suffix is stripped before an id reaches the gateway', () => {
-  // Every suffixed spelling 404s on the real gateway, so only the base id is sent.
-  assert.equal(gatewayModelId('system.ai.claude-opus-5[1m]'), 'system.ai.claude-opus-5');
-  assert.equal(gatewayModelId('system.ai.claude-opus-5'), 'system.ai.claude-opus-5');
-  assert.equal(isOneMVariant('system.ai.claude-opus-5[1m]'), true);
-  assert.equal(isOneMVariant('system.ai.claude-opus-5'), false);
+test('models: one context probe is shared by every model with the same output cap', async () => {
+  setConfig({});
+  const stub = gatewayStub({
+    models: [
+      'system.ai.claude-opus-5',
+      'system.ai.claude-opus-5-5',
+      'system.ai.claude-sonnet-5',
+      'system.ai.claude-haiku-4-5',
+      'system.ai.claude-opus-4-5',
+    ],
+  });
+  try {
+    const discovered = await discoverModels(probeAuth as never, PROBE_ORIGIN, memoryStore());
+    // The 1.1MB probe is the expensive one, so it must not run per model:
+    // one per distinct output cap, not one per model.
+    assert.equal(stub.contextProbes.length, 2);
+    assert.deepEqual(
+      discovered.map((model) => [model.id, model.maxOutputTokens, model.maxInputTokens]),
+      [
+        ['system.ai.claude-opus-5-5', 128000, 1000000],
+        ['system.ai.claude-opus-5', 128000, 1000000],
+        ['system.ai.claude-opus-4-5', 64000, 200000],
+        ['system.ai.claude-sonnet-5', 128000, 1000000],
+        ['system.ai.claude-haiku-4-5', 64000, 200000],
+      ],
+    );
+  } finally {
+    stub.restore();
+  }
+});
+
+test('models: a remembered model is never probed again', async () => {
+  setConfig({});
+  const store = memoryStore();
+  const first = gatewayStub();
+  try {
+    await discoverModels(probeAuth as never, PROBE_ORIGIN, store);
+    assert.ok(first.probes.length > 0, 'a cold start measures');
+  } finally {
+    first.restore();
+  }
+
+  const second = gatewayStub();
+  try {
+    const again = await discoverModels(probeAuth as never, PROBE_ORIGIN, store);
+    assert.deepEqual(second.probes, [], 'a warm start spends nothing');
+    assert.deepEqual(
+      again.map((model) => model.maxInputTokens),
+      [1000000, 1000000, 200000],
+      'the remembered limits are replayed',
+    );
+  } finally {
+    second.restore();
+  }
+});
+
+test('models: only the newly added model is probed', async () => {
+  setConfig({});
+  const store = memoryStore();
+  const first = gatewayStub({ models: ['system.ai.claude-opus-5'] });
+  try {
+    await discoverModels(probeAuth as never, PROBE_ORIGIN, store);
+  } finally {
+    first.restore();
+  }
+
+  const second = gatewayStub({ models: ['system.ai.claude-opus-5', 'system.ai.claude-haiku-4-5'] });
+  try {
+    await discoverModels(probeAuth as never, PROBE_ORIGIN, store);
+    assert.deepEqual(
+      new Set(second.probes),
+      new Set(['system.ai.claude-haiku-4-5']),
+      'the known model is left alone',
+    );
+  } finally {
+    second.restore();
+  }
+});
+
+test('models: limits are remembered per workspace, not globally', async () => {
+  setConfig({});
+  const store = memoryStore();
+  const first = gatewayStub({ models: ['system.ai.claude-opus-5'] });
+  try {
+    await discoverModels(probeAuth as never, PROBE_ORIGIN, store);
+  } finally {
+    first.restore();
+  }
+
+  const other = gatewayStub({ models: ['system.ai.claude-opus-5'] });
+  try {
+    // Entitlements differ per workspace, so the same id must be measured again.
+    await discoverModels(probeAuth as never, 'https://dbc-11111111-1111.cloud.databricks.com', store);
+    assert.equal(other.contextProbes.length, 1);
+  } finally {
+    other.restore();
+  }
+});
+
+test('models: an unreadable rejection falls back without re-probing every launch', async () => {
+  setConfig({});
+  const store = memoryStore();
+  const first = gatewayStub({ models: ['system.ai.claude-sonnet-4-5'], unparsable: true });
+  try {
+    const discovered = await discoverModels(probeAuth as never, PROBE_ORIGIN, store);
+    // Nothing could be read, so the configured fallbacks apply.
+    assert.deepEqual(
+      [discovered[0]!.maxInputTokens, discovered[0]!.maxOutputTokens],
+      [undefined, undefined],
+    );
+  } finally {
+    first.restore();
+  }
+
+  const second = gatewayStub({ models: ['system.ai.claude-sonnet-4-5'], unparsable: true });
+  try {
+    await discoverModels(probeAuth as never, PROBE_ORIGIN, store);
+    assert.deepEqual(second.probes, [], 'the 1.1MB probe must not be repeated on the next launch');
+  } finally {
+    second.restore();
+  }
+});
+
+test('models: an unreadable measurement is retried once it ages out', async () => {
+  setConfig({});
+  const store = memoryStore();
+  const first = gatewayStub({ models: ['system.ai.claude-sonnet-4-5'], unparsable: true });
+  try {
+    await discoverModels(probeAuth as never, PROBE_ORIGIN, store);
+  } finally {
+    first.restore();
+  }
+
+  // Backdate the entry past the retry window.
+  const key = 'aiGateway.modelLimits.v2';
+  const cache = store.get<Record<string, { measuredAt: number }>>(key)!;
+  for (const entry of Object.values(cache)) {
+    entry.measuredAt = Date.now() - 25 * 60 * 60 * 1000;
+  }
+  await store.update(key, cache);
+
+  const second = gatewayStub({ models: ['system.ai.claude-sonnet-4-5'] });
+  try {
+    const discovered = await discoverModels(probeAuth as never, PROBE_ORIGIN, store);
+    assert.equal(second.contextProbes.length, 1, 'a stale unreadable entry is measured again');
+    assert.equal(discovered[0]!.maxInputTokens, 200000);
+  } finally {
+    second.restore();
+  }
+});
+
+test('models: forgetting the limits makes the next discovery measure again', async () => {
+  setConfig({});
+  const store = memoryStore();
+  const first = gatewayStub({ models: ['system.ai.claude-opus-5'] });
+  try {
+    await discoverModels(probeAuth as never, PROBE_ORIGIN, store);
+  } finally {
+    first.restore();
+  }
+
+  await forgetModelLimits(store);
+
+  const second = gatewayStub({ models: ['system.ai.claude-opus-5'] });
+  try {
+    await discoverModels(probeAuth as never, PROBE_ORIGIN, store);
+    assert.equal(second.contextProbes.length, 1);
+  } finally {
+    second.restore();
+  }
+});
+
+test('models: the thinking style and effort levels are measured too', async () => {
+  setConfig({});
+  const stub = gatewayStub({ models: ['system.ai.claude-opus-5', 'system.ai.claude-haiku-4-5'] });
+  try {
+    const discovered = await discoverModels(probeAuth as never, PROBE_ORIGIN, memoryStore());
+    assert.deepEqual(
+      discovered.map((model) => [model.id, model.thinkingStyle, model.effortLevels]),
+      [
+        ['system.ai.claude-opus-5', 'adaptive', ['low', 'medium', 'high', 'xhigh', 'max']],
+        // Budget-style models take no effort levels, so none are invented.
+        ['system.ai.claude-haiku-4-5', 'budget', undefined],
+      ],
+    );
+  } finally {
+    stub.restore();
+  }
+});
+
+test('models: an unreadable thinking probe leaves the capability unset', async () => {
+  setConfig({});
+  const stub = gatewayStub({ models: ['system.ai.claude-opus-5'], unparsable: true });
+  try {
+    const discovered = await discoverModels(probeAuth as never, PROBE_ORIGIN, memoryStore());
+    assert.equal(discovered[0]!.thinkingStyle, undefined);
+    assert.equal(discovered[0]!.effortLevels, undefined);
+  } finally {
+    stub.restore();
+  }
+});
+
+test('models: discovery still works when no store is provided', async () => {
+  setConfig({});
+  const stub = gatewayStub({ models: ['system.ai.claude-opus-5'] });
+  try {
+    const discovered = await discoverModels(probeAuth as never, PROBE_ORIGIN);
+    assert.equal(discovered[0]!.maxOutputTokens, 128000);
+  } finally {
+    stub.restore();
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -461,27 +653,9 @@ test('models: pins each family to the strongest version the gateway reports', ()
   });
 });
 
-test('models: pins ignore the synthesized [1m] entries and never carry the suffix', () => {
-  const pins = claudeCodeModelPins(
-    withOneMVariants([{ id: 'system.ai.claude-opus-5', displayName: 'Claude Opus 5' }]),
-  );
-  assert.deepEqual(pins, { ANTHROPIC_DEFAULT_OPUS_MODEL: 'system.ai.claude-opus-5' });
-});
-
 test('models: a family absent from the gateway gets no pin', () => {
   const pins = claudeCodeModelPins([{ id: 'system.ai.claude-sonnet-5', displayName: 'Claude Sonnet 5' }]);
   assert.deepEqual(pins, { ANTHROPIC_DEFAULT_SONNET_MODEL: 'system.ai.claude-sonnet-5' });
-});
-
-test('models: offerOneMContext false keeps the 1M entries out of the picker', async () => {
-  setConfig({ offerOneMContext: false });
-  const stub = gatewayStub({});
-  try {
-    const discovered = await discoverModels(probeAuth as never, PROBE_ORIGIN);
-    assert.ok(!discovered.some((model) => /\[1m\]$/.test(model.id)));
-  } finally {
-    stub.restore();
-  }
 });
 
 // ---------------------------------------------------------------------------

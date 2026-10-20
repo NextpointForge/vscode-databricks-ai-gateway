@@ -25,6 +25,7 @@ export type StatusMenuAction =
   | { kind: 'signOut' }
   | { kind: 'selectWorkspace' }
   | { kind: 'discoverModels' }
+  | { kind: 'remeasureLimits' }
   | { kind: 'configureClaudeCode' }
   | { kind: 'openClaudeSettings' }
   | { kind: 'copyModelId'; modelId: string }
@@ -134,6 +135,11 @@ export function buildStatusMenu(snapshot: StatusSnapshot): StatusMenuItem[] {
   if (snapshot.signedIn) {
     if ((snapshot.models ?? []).length > 0) {
       items.push({ label: '$(sync) Refresh models', action: { kind: 'discoverModels' } });
+      items.push({
+        label: '$(beaker) Re-measure token limits',
+        detail: 'Forget the remembered per-model limits and measure them again',
+        action: { kind: 'remeasureLimits' },
+      });
     }
     items.push({
       label: '$(tools) Configure Claude Code',

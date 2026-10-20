@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+- Per-model token limits are now measured from the gateway instead of declared
+  locally. The limits genuinely differ between models — 1,000,000/128,000 for
+  Opus 5.x and Sonnet 4.6+, 200,000/64,000 for Opus 4.5 and Haiku 4.5 — so the
+  single pair of settings was wrong for most of them. Both probes are rejected
+  during validation, so nothing is billed.
+- Measurements are remembered in global state, keyed by workspace and model, so
+  only a newly served model is ever probed. Added a "Re-measure token limits"
+  action to the status menu.
+- Models are grouped by output cap so the large context probe is sent once per
+  group rather than once per model, cutting a first sign-in from 12.6 MB to
+  3.4 MB with identical measured limits.
+- Each model's thinking API and effort levels are measured the same way, and the
+  adaptive models now offer a "Thinking Effort" dropdown in the chat model
+  picker. The gateway serves two incompatible thinking shapes and rejects the
+  wrong one, so the style is read rather than assumed; models whose style could
+  not be read are sent no thinking parameters.
+- Removed the `(1M context)` picker entries, the `[1m]` id suffix and the
+  `aiGateway.offerOneMContext` setting. The gateway serves the full window on
+  the base model id: the `anthropic-beta: context-1m-2025-08-07` header made no
+  difference to any model's measured limit, and the hardcoded allowlist both
+  omitted models that do serve 1M and listed models this gateway does not serve.
+- `aiGateway.maxInputTokens` and `aiGateway.maxOutputTokens` are now fallbacks,
+  applied only when a model's limit cannot be read.
+
 ## 0.2.0
 
 First Visual Studio Marketplace release, published as

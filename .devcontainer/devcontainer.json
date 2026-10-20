@@ -6,7 +6,8 @@
     "vscode": {
       "extensions": [
         "dbaeumer.vscode-eslint",
-        "github.vscode-github-actions"
+        "github.vscode-github-actions",
+        "NextpointForge.aigw-models"
       ]
     }
   }
