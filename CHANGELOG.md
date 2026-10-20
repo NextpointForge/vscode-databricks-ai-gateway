@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1
 
 - Per-model token limits are now measured from the gateway instead of declared
   locally. The limits genuinely differ between models — 1,000,000/128,000 for
