@@ -38,6 +38,16 @@ export enum QuickPickItemKind {
 
 export class CancellationError extends Error {}
 
+export class LanguageModelError extends Error {
+  private constructor(message: string, readonly code: string) {
+    super(message);
+  }
+
+  static Blocked(message?: string): LanguageModelError {
+    return new LanguageModelError(message ?? '', 'Blocked');
+  }
+}
+
 export class EventEmitter<T> {
   private listeners: Array<(value: T) => void> = [];
   event = (listener: (value: T) => void) => {

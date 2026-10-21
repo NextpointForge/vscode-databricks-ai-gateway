@@ -250,6 +250,7 @@ ug auth-token --host "$WORKSPACE" --profile "$PROFILE" \
 
 | Symptom | Cause |
 | --- | --- |
+| `AI Gateway budget exhausted` | The gateway's spending budget has reached its limit. The chat error includes the gateway's budget details. Contact an administrator to increase the limit or use another authorized budget. Signing in again will not help; another model may share the same budget. Models remain listed, and you can retry after the budget is available again. |
 | Models missing from the picker | Not signed in, or no workspace selected. Open the status bar menu and use **Refresh models**. |
 | `Port 8020 is already in use` | Another Databricks or Azure CLI login is holding the redirect port. |
 | Browser redirect never returns | The browser cannot reach the extension's listener (common on SSH remotes and some container setups). Click **Paste redirect URL instead** and paste the `http://localhost:8020/?code=...` address from the browser. |

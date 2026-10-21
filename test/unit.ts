@@ -4,19 +4,19 @@ import * as vscode from 'vscode';
 import { accountLabel } from '../src/authProvider';
 import { ConfigurationError, accountAuthorizeUrl, anthropicBaseUrl, readConfig, requireWorkspaceOrigin, validateConfig } from '../src/config';
 import {
-    LimitStore,
-    claudeCodeModelPins,
-    discoverModels,
-    forgetModelLimits,
-    sortModels
+  LimitStore,
+  claudeCodeModelPins,
+  discoverModels,
+  forgetModelLimits,
+  sortModels
 } from '../src/models';
 import {
-    GatewayChatProvider,
-    SessionState,
-    StreamRelay,
-    USAGE_MIME_TYPE,
-    applyCacheBreakpoints,
-    toAnthropicMessages,
+  GatewayChatProvider,
+  SessionState,
+  StreamRelay,
+  USAGE_MIME_TYPE,
+  applyCacheBreakpoints,
+  toAnthropicMessages,
 } from '../src/provider';
 import { StatusSnapshot, buildStatusMenu, describeSnapshot } from '../src/statusMenu';
 import { filterWorkspaces } from '../src/workspaces';
@@ -1145,6 +1145,96 @@ const SESSION: SessionState = {
 };
 
 const NO_TOKEN_OPTIONS = {} as unknown as vscode.CancellationToken;
+
+const BUDGET_EXHAUSTED = 'Budget "innovation-team-aigw-prod-aigw" (7b48cb99-eec3-41a7-ba10-00d9bbcd5a37) has reached its limit of $11800. To continue, contact an admin to increase the budget or use a different budget.';
+
+for (const scenario of [
+  { name: 'budget exhaustion', statuses: [403], body: { message: BUDGET_EXHAUSTED }, invalidations: 0, reason: /AI Gateway budget .* is exhausted/ },
+  { name: 'nested budget exhaustion', statuses: [403], body: { error: { type: 'permission_error', message: BUDGET_EXHAUSTED } }, invalidations: 0, reason: /AI Gateway budget .* is exhausted/ },
+  { name: 'plain-text budget exhaustion', statuses: [403], body: BUDGET_EXHAUSTED, invalidations: 0, reason: /AI Gateway budget .* is exhausted/ },
+  { name: 'budget exhaustion after token refresh', statuses: [401, 403], body: { message: BUDGET_EXHAUSTED }, invalidations: 1, reason: /AI Gateway budget .* is exhausted/ },
+  { name: 'generic forbidden', statuses: [403, 403], body: { message: 'Model access is forbidden' }, invalidations: 1, reason: /denied access \(HTTP 403\): Model access is forbidden/ },
+  { name: 'unrelated budget rejection', statuses: [403, 403], body: { message: 'You cannot edit this budget' }, invalidations: 1, reason: /denied access \(HTTP 403\): You cannot edit this budget/ },
+  { name: 'malformed forbidden detail', statuses: [403, 403], body: { message: 42, error: null }, invalidations: 1, reason: /denied access \(HTTP 403\)/ },
+  { name: 'persistent unauthorized', statuses: [401, 401], body: { message: 'Token expired' }, invalidations: 1, reason: /rejected the credential/ },
+  { name: 'unauthorized recovers after refresh', statuses: [401, 200], body: { message: 'Token expired' }, invalidations: 1, reason: /^$/ },
+]) {
+  test(`chat errors: ${scenario.name}`, async () => {
+    setConfig({});
+    const original = globalThis.fetch;
+    const requests: string[] = [];
+    const invalidated: string[] = [];
+    const auth = {
+      getAccessToken: async () => `test-token-${invalidated.length}`,
+      invalidate: (accessToken: string) => { invalidated.push(accessToken); },
+    };
+    const provider = new GatewayChatProvider(auth as never, () => SESSION, async () => SESSION);
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const headers = input instanceof Request ? input.headers : new Headers(init?.headers);
+      requests.push(headers.get('authorization') ?? '');
+      assert.ok(requests.length <= scenario.statuses.length, 'unexpected extra request');
+      const status = scenario.statuses[requests.length - 1];
+      if (status === 200) {
+        const events = [
+          { type: 'message_start', message: { id: 'test-message', type: 'message', role: 'assistant', model: SESSION.models[0]!.id, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } },
+          { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 0 } },
+          { type: 'message_stop' },
+        ];
+        return new Response(events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''), {
+          headers: { 'Content-Type': 'text/event-stream' },
+        });
+      }
+      return new Response(typeof scenario.body === 'string' ? scenario.body : JSON.stringify(scenario.body), {
+        status,
+        headers: { 'Content-Type': typeof scenario.body === 'string' ? 'text/plain' : 'application/json' },
+      });
+    }) as typeof globalThis.fetch;
+    try {
+      const models = await provider.provideLanguageModelChatInformation({ silent: true }, NO_TOKEN_OPTIONS);
+      const response = provider.provideLanguageModelChatResponse(models[0]!, [], {} as vscode.ProvideLanguageModelChatResponseOptions,
+          { report: () => undefined }, {
+            isCancellationRequested: false,
+            onCancellationRequested: () => ({ dispose: () => undefined }),
+          });
+      if (scenario.statuses.at(-1) === 200) {
+        await response;
+      } else {
+        await assert.rejects(response, (error: Error) => {
+          assert.match(error.message, scenario.reason);
+          if (scenario.name.includes('budget exhaustion')) {
+            assert.equal(error.name, 'Error');
+            assert.equal(error.stack, '');
+            assert.ok(!(error instanceof vscode.LanguageModelError));
+            const serialized = JSON.parse(JSON.stringify({ name: error.name, message: error.message, stack: error.stack }));
+            const received = Object.assign(new Error(), serialized);
+            assert.equal(received.message, error.message);
+            assert.equal(received.stack, '');
+            assert.match(error.message, /innovation-team-aigw-prod-aigw/);
+            assert.match(error.message, /limit \$11800/);
+            assert.match(error.message, /ask an administrator/i);
+            assert.doesNotMatch(error.message, /7b48cb99-eec3-41a7-ba10-00d9bbcd5a37|To continue|Budget "innovation-team/);
+            assert.ok(!error.message.includes(BUDGET_EXHAUSTED));
+          }
+          if (scenario.statuses.at(-1) === 403) {
+            assert.doesNotMatch(error.message, /Sign In|rejected the credential/);
+          }
+          return true;
+        });
+      }
+      assert.equal(requests.length, scenario.statuses.length);
+      assert.equal(invalidated.length, scenario.invalidations);
+      assert.deepEqual(invalidated, scenario.invalidations ? ['test-token-0'] : []);
+      assert.equal(requests[0], 'Bearer test-token-0');
+      if (requests.length > 1) {
+        assert.equal(requests[1], 'Bearer test-token-1');
+      }
+      assert.deepEqual(await provider.provideLanguageModelChatInformation({ silent: true }, NO_TOKEN_OPTIONS), models);
+    } finally {
+      globalThis.fetch = original;
+      provider.dispose();
+    }
+  });
+}
 
 /** A provider whose resolve outcome the test flips between calls. */
 function harness(options: { signedIn?: boolean } = {}) {

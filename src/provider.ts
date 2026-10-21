@@ -1,10 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
+import Anthropic, { APIError } from '@anthropic-ai/sdk';
 import type {
-    ContentBlockParam,
-    MessageParam,
-    MessageStreamEvent,
-    Tool,
-    ToolChoice,
+  ContentBlockParam,
+  MessageParam,
+  MessageStreamEvent,
+  Tool,
+  ToolChoice,
 } from '@anthropic-ai/sdk/resources/messages';
 import * as vscode from 'vscode';
 import { AuthManager, NotSignedInError } from './auth';
@@ -207,8 +207,8 @@ export class GatewayChatProvider implements vscode.LanguageModelChatProvider {
   }
 
   /**
-   * Issues the request and relays stream events. A 401 gets exactly one retry
-   * with a freshly minted token, which covers a token expiring mid-session.
+  * Issues the request and relays stream events. A 401 or unclassified 403 gets
+  * one retry with a fresh token; an exhausted budget cannot recover that way.
    */
   private async streamOnce(
     session: SessionState,
@@ -246,7 +246,7 @@ export class GatewayChatProvider implements vscode.LanguageModelChatProvider {
         return;
       }
       if (allowRetry && isUnauthorized(error)) {
-        log.debug('Gateway returned 401 mid-request; retrying once with a new token.');
+        log.debug(`Gateway returned ${error.status} mid-request; retrying once with a new token.`);
         this.auth.invalidate(accessToken);
         await this.streamOnce(session, body, progress, token, /* allowRetry */ false);
         return;
@@ -698,8 +698,37 @@ function usagePart(usage: { input: number; cacheRead: number; cacheWrite: number
   );
 }
 
-function isUnauthorized(error: unknown): boolean {
-  return error instanceof Anthropic.APIError && (error.status === 401 || error.status === 403);
+function isUnauthorized(error: unknown): error is APIError {
+  return error instanceof Anthropic.APIError &&
+    (error.status === 401 || (error.status === 403 && !isBudgetExhausted(error)));
+}
+
+function gatewayErrorMessage(error: APIError): string {
+  const detail: unknown = error.error;
+  if (detail && typeof detail === 'object') {
+    const message = 'message' in detail ? detail.message : undefined;
+    if (typeof message === 'string' && message.trim()) {
+      return message;
+    }
+    const nested = 'error' in detail ? detail.error : undefined;
+    if (nested && typeof nested === 'object' && 'message' in nested &&
+        typeof nested.message === 'string' && nested.message.trim()) {
+      return nested.message;
+    }
+  }
+  return error.message;
+}
+
+function isBudgetExhausted(error: APIError): boolean {
+  return error.status === 403 && /\bbudget\s+[^\r\n]+?\s+has reached its limit\b/i.test(gatewayErrorMessage(error));
+}
+
+function budgetErrorMessage(error: APIError): string {
+  const detail = gatewayErrorMessage(error);
+  const match = /\bbudget\s+["']([^"']+)["'](?:\s+\([^)]+\))?\s+has reached its limit(?:\s+of\s+([^\r\n.]+))?/i.exec(detail);
+  const budget = match?.[1] ? ` "${match[1]}"` : '';
+  const limit = match?.[2] ? ` (limit ${match[2].trim()})` : '';
+  return `AI Gateway budget${budget} is exhausted${limit}. Ask an administrator to increase it or use another authorized budget.`;
 }
 
 /** Turns SDK errors into messages a user can act on. */
@@ -711,9 +740,19 @@ function translateError(error: unknown): Error {
   }
   if (error instanceof Anthropic.APIError) {
     const status = error.status;
-    if (status === 401 || status === 403) {
+    if (isBudgetExhausted(error)) {
+      const failure = new Error(budgetErrorMessage(error));
+      failure.stack = '';
+      return failure;
+    }
+    if (status === 401) {
       return new Error(
         'The AI Gateway rejected the credential. Run "AI Gateway: Sign In" to sign in again.',
+      );
+    }
+    if (status === 403) {
+      return new Error(
+        `The AI Gateway denied access (HTTP 403): ${gatewayErrorMessage(error)} Check your gateway permissions and model access.`,
       );
     }
     if (status === 404) {

@@ -2,6 +2,9 @@
 
 ## 0.2.2
 
+- Budget-exhausted gateway responses now show the budget details in chat instead
+  of incorrect sign-in advice, without refreshing credentials or changing the
+  model list. Other forbidden responses retain the gateway's explanation.
 - Each response now reports the gateway's token usage to Copilot Chat, so the
   context window indicator in the chat input shows real usage instead of 0%.
   Cached input counts toward the prompt. This relies on an undocumented Copilot

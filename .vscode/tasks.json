@@ -13,6 +13,17 @@
       "problemMatcher": []
     },
     {
+      "label": "Install Local AI Gateway Models Extension",
+      "type": "shell",
+      "command": "code",
+      "args": ["--install-extension", "${workspaceFolder}/aigw-models.vsix"],
+      "windows": {
+        "command": "code.cmd"
+      },
+      "dependsOn": "Generate Local AI Gateway Models VSIX",
+      "problemMatcher": []
+    },
+    {
       "label": "Install AI Gateway Models Extension",
       "type": "shell",
       "command": "tmp=$(mktemp --suffix=.vsix) && curl -fsSL 'https://github.com/NextpointForge/vscode-databricks-ai-gateway/releases/latest/download/aigw-models.vsix' -o \"$tmp\" && code --install-extension \"$tmp\"; result=$?; rm -f \"$tmp\"; exit $result",
