@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Declares support for the VS Code Agents window, so the extension is enabled
+  there and its models are available to agent sessions. The Agents window has no
+  status bar; use **AI Gateway: Status and Actions** from the command palette.
+
 ## 0.2.2
 
 - Budget-exhausted gateway responses now show the budget details in chat instead
