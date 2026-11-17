@@ -67,9 +67,14 @@ Your account also appears in VS Code's **Accounts** menu, where you can sign out
 
 ### Agents window
 
-The extension also works in the VS Code **Agents window**. That window has no
-status bar, so open the menu with **AI Gateway: Status and Actions** from the
-command palette.
+The extension works in the VS Code **Agents window**. That window has no status
+bar, so open the menu with **AI Gateway: Status and Actions** from the command
+palette. To use AI Gateway models with the Copilot harness in the Agents window
+or Chat view, enable the experimental `chat.agentHost.byokModels.enabled`
+setting and select the model from the picker. This works only in local
+windows: in dev containers and other remote windows, VS Code doesn't allow
+extension-provided models in the Copilot harness, so use the local agent
+harness there. Availability also depends on your organization's BYOK policy.
 
 ## Commands
 
@@ -103,6 +108,7 @@ palette, for example for keyboard shortcuts or in the Agents window.
 | Problem | What to do |
 | --- | --- |
 | `AI Gateway budget exhausted` | The gateway's spending budget has run out, and signing in again won't help. Ask an administrator to raise the limit, then try again. Other models may use the same budget. |
+| `Bring your own key (BYOK) models aren't supported in remote Copilot sessions` | In a dev container, SSH or WSL window, or with a remote agent host, the Copilot harness runs remotely, and VS Code doesn't allow extension-provided models there. No setting changes this. Use the local agent harness instead of the Copilot harness, or use Claude Code. In a local window, enable the experimental `chat.agentHost.byokModels.enabled` setting. Copilot Business or Enterprise users may also need an administrator to enable BYOK. |
 | No models in the picker | Make sure you're signed in and have a workspace selected. Then use **Refresh models** in the menu. |
 | `Port 8020 is already in use` | Another Databricks or Azure CLI sign-in is using the port. Finish or close it, then try again. |
 | The browser never returns to VS Code | This is common on SSH remotes and in containers. Click **Paste redirect URL instead**, then paste the `http://localhost:8020/?code=...` address from your browser. |
